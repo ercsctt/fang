@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+# Quality gate script for fang project
+# Auto-generated based on detected tools in the project
+# Runs formatters first, then linters/type-checkers, then tests
+
+set -e  # Exit on first error
+
+echo "🚀 Running quality gate checks..."
+echo ""
+
+# Track overall status
+FAILED=0
+
+# ============================================================================
+# FORMATTERS (Auto-fix code style)
+# ============================================================================
+
+echo "📝 Step 1/5: Running PHP formatter (Pint)..."
+if vendor/bin/pint --dirty; then
+    echo "✅ Pint formatting complete"
+else
+    echo "❌ Pint formatting failed"
+    FAILED=1
+fi
+echo ""
+
+echo "📝 Step 2/5: Running JS/TS/Vue formatter (Prettier)..."
+if npm run format --silent; then
+    echo "✅ Prettier formatting complete"
+else
+    echo "❌ Prettier formatting failed"
+    FAILED=1
+fi
+echo ""
+
+# ============================================================================
+# LINTERS & TYPE CHECKERS
+# ============================================================================
+
+echo "🔍 Step 3/5: Running ESLint..."
+if npm run lint --silent; then
+    echo "✅ ESLint checks passed"
+else
+    echo "❌ ESLint checks failed"
+    FAILED=1
+fi
+echo ""
+
+echo "🔍 Step 4/5: Running TypeScript type checking..."
+if npx vue-tsc --noEmit; then
+    echo "✅ TypeScript type checking passed"
+else
+    echo "❌ TypeScript type checking failed"
+    FAILED=1
+fi
+echo ""
+
+# ============================================================================
+# TESTS
+# ============================================================================
+
+echo "🧪 Step 5/5: Running tests (Pest/PHPUnit)..."
+if php artisan test; then
+    echo "✅ All tests passed"
+else
+    echo "❌ Tests failed"
+    FAILED=1
+fi
+echo ""
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+
+if [ $FAILED -eq 0 ]; then
+    echo "✅ All quality checks passed!"
+    exit 0
+else
+    echo "❌ Some quality checks failed. Please fix the issues above."
+    exit 1
+fi

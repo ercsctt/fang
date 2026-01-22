@@ -26,3 +26,10 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+.fuel/*
+!.fuel/reality.md
+!.fuel/plans/
+!.fuel/prompts/
+!.fuel/quality-gate
+.fuel/prompts/*.new
+.fuel/.last_init_version
