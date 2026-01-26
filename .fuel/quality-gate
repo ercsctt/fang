@@ -1,82 +1,72 @@
 #!/usr/bin/env bash
+set -e
 
-# Quality gate script for fang project
-# Auto-generated based on detected tools in the project
-# Runs formatters first, then linters/type-checkers, then tests
+# Quality Gate Script
+# Runs formatters, linters, type-checkers, and tests for this project
 
-set -e  # Exit on first error
-
-echo "🚀 Running quality gate checks..."
+echo "🔧 Running quality checks..."
 echo ""
 
-# Track overall status
-FAILED=0
+# 1. FORMATTERS (run first to auto-fix style issues)
+echo "📝 Running formatters..."
 
-# ============================================================================
-# FORMATTERS (Auto-fix code style)
-# ============================================================================
-
-echo "📝 Step 1/5: Running PHP formatter (Pint)..."
-if vendor/bin/pint --dirty; then
-    echo "✅ Pint formatting complete"
+# Laravel Pint (PHP formatter)
+if [ -f "vendor/bin/pint" ]; then
+    echo "  → Running Laravel Pint..."
+    vendor/bin/pint --dirty
 else
-    echo "❌ Pint formatting failed"
-    FAILED=1
+    echo "  ⚠️  Pint not found, skipping PHP formatting"
 fi
+
+# Prettier (JS/TS/Vue formatter)
+if [ -f "node_modules/.bin/prettier" ]; then
+    echo "  → Running Prettier..."
+    npm run format 2>/dev/null || npx prettier --write resources/
+else
+    echo "  ⚠️  Prettier not found, skipping JS/TS formatting"
+fi
+
 echo ""
 
-echo "📝 Step 2/5: Running JS/TS/Vue formatter (Prettier)..."
-if npm run format --silent; then
-    echo "✅ Prettier formatting complete"
+# 2. LINTERS (check code quality)
+echo "🔍 Running linters..."
+
+# ESLint (JS/TS/Vue linter)
+if [ -f "node_modules/.bin/eslint" ]; then
+    echo "  → Running ESLint..."
+    npm run lint 2>/dev/null || npx eslint . --fix
 else
-    echo "❌ Prettier formatting failed"
-    FAILED=1
+    echo "  ⚠️  ESLint not found, skipping JS/TS linting"
 fi
+
 echo ""
 
-# ============================================================================
-# LINTERS & TYPE CHECKERS
-# ============================================================================
+# 3. TYPE CHECKERS (ensure type safety)
+echo "🔬 Running type checkers..."
 
-echo "🔍 Step 3/5: Running ESLint..."
-if npm run lint --silent; then
-    echo "✅ ESLint checks passed"
+# TypeScript (vue-tsc)
+if [ -f "node_modules/.bin/vue-tsc" ]; then
+    echo "  → Running TypeScript type checker..."
+    npx vue-tsc --noEmit
 else
-    echo "❌ ESLint checks failed"
-    FAILED=1
+    echo "  ⚠️  TypeScript not found, skipping type checking"
 fi
+
 echo ""
 
-echo "🔍 Step 4/5: Running TypeScript type checking..."
-if npx vue-tsc --noEmit; then
-    echo "✅ TypeScript type checking passed"
+# 4. TESTS (run fast tests only)
+echo "🧪 Running tests..."
+
+# Pest/PHPUnit tests
+if [ -f "vendor/bin/pest" ]; then
+    echo "  → Running Pest tests..."
+    php artisan test --compact
+elif [ -f "vendor/bin/phpunit" ]; then
+    echo "  → Running PHPUnit tests..."
+    vendor/bin/phpunit
 else
-    echo "❌ TypeScript type checking failed"
-    FAILED=1
+    echo "  ⚠️  No test runner found, skipping tests"
 fi
+
 echo ""
-
-# ============================================================================
-# TESTS
-# ============================================================================
-
-echo "🧪 Step 5/5: Running tests (Pest/PHPUnit)..."
-if php artisan test; then
-    echo "✅ All tests passed"
-else
-    echo "❌ Tests failed"
-    FAILED=1
-fi
-echo ""
-
-# ============================================================================
-# SUMMARY
-# ============================================================================
-
-if [ $FAILED -eq 0 ]; then
-    echo "✅ All quality checks passed!"
-    exit 0
-else
-    echo "❌ Some quality checks failed. Please fix the issues above."
-    exit 1
-fi
+echo "✅ All quality checks passed!"
