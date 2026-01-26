@@ -51,9 +51,9 @@ class RetailerSeeder extends Seeder
                 'name' => 'Amazon UK',
                 'slug' => 'amazon-uk',
                 'base_url' => 'https://www.amazon.co.uk',
-                'crawler_class' => null,
+                'crawler_class' => 'App\\Crawler\\Scrapers\\AmazonCrawler',
                 'is_active' => true,
-                'rate_limit_ms' => 1000,
+                'rate_limit_ms' => 3000,
             ],
             [
                 'name' => "Sainsbury's",
