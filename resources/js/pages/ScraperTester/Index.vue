@@ -1,17 +1,23 @@
 <script setup lang="ts">
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
 import axios from 'axios';
+import { computed, ref } from 'vue';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -47,7 +53,9 @@ const fetchHtml = async () => {
 
         response.value = result.data;
     } catch (err: any) {
-        error.value = err.response?.data?.error || 'An error occurred while fetching the URL';
+        error.value =
+            err.response?.data?.error ||
+            'An error occurred while fetching the URL';
     } finally {
         loading.value = false;
     }
@@ -60,6 +68,12 @@ const formattedLength = computed(() => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 });
+
+const copyToClipboard = async () => {
+    if (response.value?.html) {
+        await navigator.clipboard.writeText(response.value.html);
+    }
+};
 </script>
 
 <template>
@@ -94,7 +108,7 @@ const formattedLength = computed(() => {
                             />
                             <Label
                                 for="rotate-user-agent"
-                                class="text-sm font-normal cursor-pointer"
+                                class="cursor-pointer text-sm font-normal"
                             >
                                 Rotate user agent
                             </Label>
@@ -107,7 +121,7 @@ const formattedLength = computed(() => {
                             />
                             <Label
                                 for="use-proxy"
-                                class="text-sm font-normal cursor-pointer"
+                                class="cursor-pointer text-sm font-normal"
                             >
                                 Use proxy (BrightData)
                             </Label>
@@ -150,12 +164,13 @@ const formattedLength = computed(() => {
                             <pre
                                 class="overflow-x-auto rounded-lg border bg-muted p-4 text-xs"
                                 style="max-height: 500px"
-                            >{{ response.html }}</pre>
+                                >{{ response.html }}</pre
+                            >
                             <Button
                                 size="sm"
                                 variant="outline"
-                                class="absolute right-2 top-2"
-                                @click="navigator.clipboard.writeText(response.html)"
+                                class="absolute top-2 right-2"
+                                @click="copyToClipboard"
                             >
                                 Copy
                             </Button>
@@ -170,7 +185,9 @@ const formattedLength = computed(() => {
                                 :key="key"
                                 class="font-mono"
                             >
-                                <span class="text-muted-foreground">{{ key }}:</span>
+                                <span class="text-muted-foreground"
+                                    >{{ key }}:</span
+                                >
                                 {{ value }}
                             </div>
                         </div>
