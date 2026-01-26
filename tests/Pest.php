@@ -17,7 +17,8 @@ pest()->extend(Tests\TestCase::class)
 
 // Unit tests that need Laravel features (like config, Log facades)
 pest()->extend(Tests\TestCase::class)
-    ->in('Unit/Crawler');
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit');
 
 /*
 |--------------------------------------------------------------------------
