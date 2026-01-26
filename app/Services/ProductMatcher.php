@@ -64,16 +64,11 @@ class ProductMatcher
         $fuzzyMatch = $this->findFuzzyMatch($listing);
 
         if ($fuzzyMatch !== null) {
-            // Use confidence to determine match type
-            $matchType = $fuzzyMatch['confidence'] >= self::EXACT_MATCH_THRESHOLD
-                ? MatchType::Exact
-                : MatchType::Fuzzy;
-
             return $this->createMatch(
                 listing: $listing,
                 product: $fuzzyMatch['product'],
                 confidence: $fuzzyMatch['confidence'],
-                type: $matchType,
+                type: MatchType::Fuzzy,
             );
         }
 

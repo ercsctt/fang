@@ -168,7 +168,8 @@ test('fuzzy matching finds fuzzy match with similar names', function () {
 
     expect($result)->not->toBeNull()
         ->and($result['product']->id)->toBe($product->id)
-        ->and($result['confidence'])->toBeGreaterThanOrEqual(70.0);
+        ->and($result['confidence'])->toBeGreaterThanOrEqual(70.0)
+        ->and($result['confidence'])->toBeLessThan(95.0);
 });
 
 test('fuzzy matching returns null for very different titles', function () {
