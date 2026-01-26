@@ -16,20 +16,14 @@ class BMProductListingUrlExtractor implements ExtractorInterface
     {
         $crawler = new Crawler($html);
 
-        // B&M typically uses product links with specific patterns
-        // Adjust these selectors based on actual B&M website structure
-        $productLinks = $crawler->filter('a[href*="/product/"]')
+        // Extract all links from the page
+        $allLinks = $crawler->filter('a[href]')
             ->each(fn (Crawler $node) => $node->attr('href'));
 
-        // Alternative: Look for product cards or listings
-        $alternativeLinks = $crawler->filter('.product-tile a, .product-card a, [data-product-id] a')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $allLinks = array_merge($productLinks, $alternativeLinks);
         $processedUrls = [];
 
         foreach ($allLinks as $link) {
-            if (!$link) {
+            if (! $link) {
                 continue;
             }
 
@@ -59,12 +53,14 @@ class BMProductListingUrlExtractor implements ExtractorInterface
             }
         }
 
-        Log::info("Extracted " . count($processedUrls) . " product listing URLs from {$url}");
+        Log::info('Extracted '.count($processedUrls)." product listing URLs from {$url}");
     }
 
     public function canHandle(string $url): bool
     {
-        return str_contains($url, 'bmstores.co.uk');
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return $host === 'bmstores.co.uk' || $host === 'www.bmstores.co.uk';
     }
 
     /**
@@ -83,7 +79,7 @@ class BMProductListingUrlExtractor implements ExtractorInterface
 
         // Protocol-relative URL
         if (str_starts_with($url, '//')) {
-            return $scheme . ':' . $url;
+            return $scheme.':'.$url;
         }
 
         // Absolute path
@@ -94,6 +90,7 @@ class BMProductListingUrlExtractor implements ExtractorInterface
         // Relative path
         $path = $parsedBase['path'] ?? '';
         $basePath = substr($path, 0, strrpos($path, '/') + 1);
+
         return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
@@ -103,9 +100,9 @@ class BMProductListingUrlExtractor implements ExtractorInterface
     private function isProductUrl(string $url): bool
     {
         // B&M product URLs typically contain /product/ or have numeric product IDs
-        return str_contains($url, '/product/')
-            || preg_match('/\/p\/\d+/', $url)
-            || preg_match('/\/pd\/[a-z0-9-]+/', $url);
+        return preg_match('#/product/#', $url)
+            || preg_match('#/p/\d+#', $url)
+            || preg_match('#/pd/[a-z0-9-]+#i', $url);
     }
 
     /**
