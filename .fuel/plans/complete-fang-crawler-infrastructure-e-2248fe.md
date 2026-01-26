@@ -245,5 +245,130 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 - Unit tests: `tests/Unit/Crawler/Extractors/Amazon/AmazonProductDetailsExtractorTest.php` (35 tests)
 - Unit tests: `tests/Unit/Crawler/Extractors/Amazon/AmazonProductReviewsExtractorTest.php` (28 tests)
 
+### Tesco Crawler (f-27bb0c) - Completed
+- Created `TescoCrawler` (`app/Crawler/Scrapers/TescoCrawler.php`)
+  - Extends `BaseCrawler`, registers all three extractors (URL, Details, Reviews)
+  - Starting URLs: 5 URLs covering dog food (all, dry, wet), dog treats, and puppy food
+  - Request delay: 2000ms (2 seconds between requests)
+  - Custom headers: Accept-Language and Accept headers for UK content
+  - Uses `useAdvancedAdapter: true` for reliable scraping
+
+- Created `TescoProductListingUrlExtractor` (`app/Crawler/Extractors/Tesco/TescoProductListingUrlExtractor.php`)
+  - Extracts product URLs from category pages
+  - URL pattern: `/groceries/en-GB/products/{PRODUCTCODE}` where PRODUCTCODE is numeric (TPNs - Tesco Product Numbers)
+  - Deduplicates product URLs
+  - Extracts category from source URL path
+
+- Created `TescoProductDetailsExtractor` (`app/Crawler/Extractors/Tesco/TescoProductDetailsExtractor.php`)
+  - Prioritizes JSON-LD structured data extraction (most reliable)
+  - Falls back to Tesco-specific DOM selectors: `[data-auto="product-title"]`, `.beans-price__text`
+  - Extracts Clubcard price separately into metadata
+  - Handles Tesco's JSON-LD offers format (single object or array)
+  - 40+ known pet food brands for fallback brand extraction
+  - Weight parsing supports kg, g, ml, l units
+  - External ID is the TPN (Tesco Product Number) from URL
+
+- Created `TescoProductReviewsExtractor` (`app/Crawler/Extractors/Tesco/TescoProductReviewsExtractor.php`)
+  - Extracts reviews from JSON-LD structured data first
+  - Falls back to DOM-based extraction if no JSON-LD reviews found
+  - Handles various rating formats: data attributes, itemprop, star counts
+  - Generates deterministic external IDs: `tesco-review-{md5(url+author+body)}-{index}`
+
+- Created `CrawlTescoCommand` (`app/Console/Commands/CrawlTescoCommand.php`)
+  - Command signature: `crawler:tesco`
+  - Options: `--queue=`, `--sync`
+  - Uses `useAdvancedAdapter: true` for BrightData
+
+- Updated `CrawlProductReviewsCommand` extractor map:
+  - Added `tesco` -> `TescoProductReviewsExtractor`
+
+- `RetailerSeeder` already had Tesco entry:
+  - crawler_class: `App\Crawler\Scrapers\TescoCrawler`
+  - rate_limit_ms: 2000 (2 seconds between requests)
+
+**Patterns established:**
+- Tesco-specific extractors in `app/Crawler/Extractors/Tesco/`
+- TPN (Tesco Product Number) is the external_id for Tesco products
+- Clubcard price stored in metadata as `clubcard_price_pence`
+- JSON-LD offers can be single object or array - detect via `@type` or `price` keys (same pattern as Amazon)
+
+**Gotchas:**
+- Tesco JSON-LD `offers` can be an object (single offer) or array (multiple offers)
+- Detection: check for `@type` or `price` at top level to distinguish single vs array
+- In PHP, JSON objects decode to associative arrays, so `is_array()` always returns true
+- Must check for specific keys (`@type` or `price`) to detect single offer vs array of offers
+- Clubcard prices are promotional and should be captured separately from regular prices
+- Product IDs (TPNs) are always numeric
+
+**Testing:**
+- Unit tests: `tests/Unit/Crawler/Extractors/Tesco/TescoProductListingUrlExtractorTest.php` (16 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/Tesco/TescoProductDetailsExtractorTest.php` (41 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/Tesco/TescoProductReviewsExtractorTest.php` (32 tests)
+
+### Asda Crawler (f-2a48cc) - Completed
+- Created `AsdaCrawler` (`app/Crawler/Scrapers/AsdaCrawler.php`)
+  - Extends `BaseCrawler`, registers all three extractors (URL, Details, Reviews)
+  - Starting URLs: 7 URLs covering dog food (main, dry, wet, puppy) and dog treats (main, chews, biscuits)
+  - Request delay: 2000ms (2 seconds between requests)
+  - Custom headers: Full browser-like headers including Sec-Fetch-* to mimic browser behavior
+  - Base URL: `groceries.asda.com` (separate subdomain from main asda.com)
+
+- Created `AsdaProductListingUrlExtractor` (`app/Crawler/Extractors/Asda/AsdaProductListingUrlExtractor.php`)
+  - Extracts product URLs from category/aisle pages
+  - URL pattern: `/product/[product-name]/[SKU-ID]` or `/product/[SKU-ID]`
+  - SKU IDs are numeric identifiers
+  - Handles category pages (`/aisle/`), shelf pages (`/shelf/`), search pages (`/search/`), and super-department pages
+  - Also extracts product IDs from inline JavaScript/JSON data (Asda uses dynamic loading)
+  - Normalizes all URLs to absolute form with `groceries.asda.com`
+  - Extracts category from URL path
+
+- Created `AsdaProductDetailsExtractor` (`app/Crawler/Extractors/Asda/AsdaProductDetailsExtractor.php`)
+  - Prioritizes JSON-LD structured data extraction (most reliable)
+  - Falls back to Asda-specific DOM selectors: `[data-auto-id="pdp-product-title"]`, `[data-auto-id="pdp-price"]`
+  - Extracts Asda Rewards price and Rollback (promotional) price into metadata
+  - Handles price-per-unit extraction
+  - Handles JSON-LD offers format (single object or array)
+  - 50+ known pet food brands including ASDA own brands (Extra Special, Smart Price)
+  - Weight parsing supports kg, g, ml, l, lb, oz units
+  - External ID is the SKU ID from URL
+
+- Created `AsdaProductReviewsExtractor` (`app/Crawler/Extractors/Asda/AsdaProductReviewsExtractor.php`)
+  - Extracts reviews from JSON-LD structured data first
+  - Falls back to DOM-based extraction if no JSON-LD reviews found
+  - Handles various rating formats: data attributes, aria-label, star counts
+  - Generates deterministic external IDs: `asda-review-{md5(body+author)}-{index}`
+  - Static helper: `buildReviewsUrl(productId, page)` for review pagination
+
+- Created `CrawlAsdaCommand` (`app/Console/Commands/CrawlAsdaCommand.php`)
+  - Command signature: `crawler:asda`
+  - Options: `--queue=`, `--sync`
+
+- Updated `RetailerSeeder` with Asda entry:
+  - base_url: `https://groceries.asda.com` (not www.asda.com)
+  - crawler_class: `App\Crawler\Scrapers\AsdaCrawler`
+  - rate_limit_ms: 2000 (2 seconds between requests)
+
+**Patterns established:**
+- Asda-specific extractors in `app/Crawler/Extractors/Asda/`
+- SKU ID is the external_id for Asda products
+- Asda Rewards price stored in metadata as `asda_rewards_price`
+- Rollback (promotional) price stored in metadata as `rollback_price`
+- Asda uses `data-auto-id` attributes for reliable DOM selection
+
+**Gotchas:**
+- Asda Groceries is on `groceries.asda.com`, not `www.asda.com`
+- Asda may use infinite scroll/AJAX for category pages - product IDs can be in inline scripts
+- Asda Rewards prices may differ from standard prices - capture both
+- Rollback prices are promotional prices that need capturing
+- Product weights are often in the title, need parsing
+- JSON-LD offers can be single object or array (same pattern as Amazon/Tesco)
+
+**File locations:**
+- `app/Crawler/Scrapers/AsdaCrawler.php`
+- `app/Crawler/Extractors/Asda/AsdaProductListingUrlExtractor.php`
+- `app/Crawler/Extractors/Asda/AsdaProductDetailsExtractor.php`
+- `app/Crawler/Extractors/Asda/AsdaProductReviewsExtractor.php`
+- `app/Console/Commands/CrawlAsdaCommand.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
