@@ -79,6 +79,14 @@ class RetailerSeeder extends Seeder
                 'is_active' => true,
                 'rate_limit_ms' => 1500,
             ],
+            [
+                'name' => 'Zooplus UK',
+                'slug' => 'zooplus-uk',
+                'base_url' => 'https://www.zooplus.co.uk',
+                'crawler_class' => 'App\\Crawler\\Scrapers\\ZooplusCrawler',
+                'is_active' => true,
+                'rate_limit_ms' => 2000,
+            ],
         ];
 
         foreach ($retailers as $retailer) {
