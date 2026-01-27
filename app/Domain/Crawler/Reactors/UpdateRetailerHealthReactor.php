@@ -7,6 +7,8 @@ namespace App\Domain\Crawler\Reactors;
 use App\Domain\Crawler\Events\CrawlCompleted;
 use App\Domain\Crawler\Events\CrawlFailed;
 use App\Domain\Crawler\Events\CrawlStarted;
+use App\Enums\RetailerHealthStatus;
+use App\Models\Retailer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Spatie\EventSourcing\EventHandlers\Reactors\Reactor;
@@ -14,15 +16,21 @@ use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
 
 class UpdateRetailerHealthReactor extends Reactor
 {
+    private const DEGRADED_THRESHOLD = 5;
+
+    private const UNHEALTHY_THRESHOLD = 10;
+
+    private const PAUSE_DURATION_HOURS = 1;
+
     private const HEALTH_WINDOW_HOURS = 24;
 
     private const CACHE_TTL_HOURS = 48;
 
     public function onCrawlCompleted(CrawlCompleted $event): void
     {
-        $retailer = $this->getRetailerFromCrawl($event->crawlId);
+        $retailerSlug = $this->getRetailerFromCrawl($event->crawlId);
 
-        if ($retailer === null) {
+        if ($retailerSlug === null) {
             Log::warning('UpdateRetailerHealthReactor: Could not determine retailer for completed crawl', [
                 'crawl_id' => $event->crawlId,
             ]);
@@ -30,21 +38,41 @@ class UpdateRetailerHealthReactor extends Reactor
             return;
         }
 
-        $this->recordCrawlResult($retailer, true, $event->statistics['duration_seconds'] ?? null);
-        $this->updateHealthMetrics($retailer);
+        $retailer = Retailer::query()->where('slug', $retailerSlug)->first();
+
+        if (! $retailer) {
+            Log::warning('UpdateRetailerHealthReactor: Retailer not found', [
+                'crawl_id' => $event->crawlId,
+                'retailer_slug' => $retailerSlug,
+            ]);
+
+            return;
+        }
+
+        // Reset consecutive failures and set health status to healthy
+        $retailer->update([
+            'consecutive_failures' => 0,
+            'health_status' => RetailerHealthStatus::Healthy,
+            'paused_until' => null,
+        ]);
+
+        // Update cache-based health metrics
+        $this->recordCrawlResult($retailerSlug, true, $event->statistics['duration_seconds'] ?? null);
+        $this->updateHealthMetrics($retailerSlug);
 
         Log::debug('Retailer health updated after successful crawl', [
-            'retailer' => $retailer,
+            'retailer' => $retailerSlug,
             'crawl_id' => $event->crawlId,
             'products_discovered' => $event->productListingsDiscovered,
+            'health_status' => RetailerHealthStatus::Healthy->value,
         ]);
     }
 
     public function onCrawlFailed(CrawlFailed $event): void
     {
-        $retailer = $this->getRetailerFromCrawl($event->crawlId);
+        $retailerSlug = $this->getRetailerFromCrawl($event->crawlId);
 
-        if ($retailer === null) {
+        if ($retailerSlug === null) {
             Log::warning('UpdateRetailerHealthReactor: Could not determine retailer for failed crawl', [
                 'crawl_id' => $event->crawlId,
             ]);
@@ -52,14 +80,69 @@ class UpdateRetailerHealthReactor extends Reactor
             return;
         }
 
-        $this->recordCrawlResult($retailer, false, null);
-        $this->updateHealthMetrics($retailer);
+        $retailer = Retailer::query()->where('slug', $retailerSlug)->first();
+
+        if (! $retailer) {
+            Log::warning('UpdateRetailerHealthReactor: Retailer not found', [
+                'crawl_id' => $event->crawlId,
+                'retailer_slug' => $retailerSlug,
+            ]);
+
+            return;
+        }
+
+        // Increment consecutive failures and update last_failure_at
+        $newConsecutiveFailures = $retailer->consecutive_failures + 1;
+
+        $updateData = [
+            'consecutive_failures' => $newConsecutiveFailures,
+            'last_failure_at' => now(),
+        ];
+
+        // Apply circuit breaker logic
+        $healthStatus = $this->determineHealthStatus($newConsecutiveFailures);
+        $updateData['health_status'] = $healthStatus;
+
+        // If unhealthy, pause the retailer
+        if ($healthStatus === RetailerHealthStatus::Unhealthy && ! $retailer->isPaused()) {
+            $updateData['paused_until'] = now()->addHours(self::PAUSE_DURATION_HOURS);
+
+            Log::error('CIRCUIT BREAKER ACTIVATED: Retailer paused due to consecutive failures', [
+                'retailer' => $retailerSlug,
+                'retailer_id' => $retailer->id,
+                'consecutive_failures' => $newConsecutiveFailures,
+                'threshold' => self::UNHEALTHY_THRESHOLD,
+                'paused_until' => $updateData['paused_until']->toIso8601String(),
+                'pause_duration_hours' => self::PAUSE_DURATION_HOURS,
+            ]);
+        }
+
+        $retailer->update($updateData);
+
+        // Update cache-based health metrics
+        $this->recordCrawlResult($retailerSlug, false, null);
+        $this->updateHealthMetrics($retailerSlug);
 
         Log::debug('Retailer health updated after failed crawl', [
-            'retailer' => $retailer,
+            'retailer' => $retailerSlug,
             'crawl_id' => $event->crawlId,
             'reason' => $event->reason,
+            'consecutive_failures' => $newConsecutiveFailures,
+            'health_status' => $healthStatus->value,
         ]);
+    }
+
+    private function determineHealthStatus(int $consecutiveFailures): RetailerHealthStatus
+    {
+        if ($consecutiveFailures >= self::UNHEALTHY_THRESHOLD) {
+            return RetailerHealthStatus::Unhealthy;
+        }
+
+        if ($consecutiveFailures >= self::DEGRADED_THRESHOLD) {
+            return RetailerHealthStatus::Degraded;
+        }
+
+        return RetailerHealthStatus::Healthy;
     }
 
     private function getRetailerFromCrawl(string $crawlId): ?string
@@ -161,5 +244,31 @@ class UpdateRetailerHealthReactor extends Reactor
     public static function getHealthMetrics(string $retailer): ?array
     {
         return Cache::get("crawler:health:metrics:{$retailer}");
+    }
+
+    /**
+     * Manually reset the health status for a retailer.
+     */
+    public static function resetHealth(string $retailerSlug): void
+    {
+        $retailer = Retailer::query()->where('slug', $retailerSlug)->first();
+
+        if ($retailer) {
+            $retailer->update([
+                'consecutive_failures' => 0,
+                'health_status' => RetailerHealthStatus::Healthy,
+                'paused_until' => null,
+                'last_failure_at' => null,
+            ]);
+
+            // Clear cache-based metrics
+            Cache::forget("crawler:health:results:{$retailerSlug}");
+            Cache::forget("crawler:health:metrics:{$retailerSlug}");
+
+            Log::info('Retailer health manually reset', [
+                'retailer' => $retailerSlug,
+                'retailer_id' => $retailer->id,
+            ]);
+        }
     }
 }

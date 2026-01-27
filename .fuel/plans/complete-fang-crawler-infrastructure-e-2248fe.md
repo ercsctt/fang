@@ -602,5 +602,122 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 **File location:**
 - `app/Console/Commands/QueueMonitorCommand.php`
 
+### Price Alert Notification System (f-9f702f) - Completed
+- Created `PriceDropped` event (`app/Domain/Crawler/Events/PriceDropped.php`)
+  - Extends `Spatie\EventSourcing\StoredEvents\ShouldBeStored` for event sourcing
+  - Properties: productListingId, productTitle, retailerName, productUrl, oldPricePence, newPricePence, dropPercentage
+
+- Created `PriceDropReactor` (`app/Domain/Crawler/Reactors/PriceDropReactor.php`)
+  - Listens for `PriceDropped` events
+  - Checks if price drop percentage meets configurable threshold (default 20%)
+  - Sends notification via configured channel (log, mail, slack, or all)
+  - Static helper: `calculateDropPercentage(oldPrice, newPrice)` for percentage calculation
+
+- Created `PriceDropNotification` (`app/Notifications/PriceDropNotification.php`)
+  - Implements `ShouldQueue` for async sending
+  - Supports mail and Slack notification channels
+  - Mail: Uses Laravel MailMessage with formatted price info and product link
+  - Slack: Uses Block Kit API with header, context, and section blocks
+
+- Updated `config/services.php` with price alerts configuration:
+  - `price_alerts.threshold_percent`: Configurable via `PRICE_ALERT_THRESHOLD_PERCENT` env var (default 20)
+  - `price_alerts.notification_channel`: Configurable via `PRICE_ALERT_CHANNEL` env var (default 'log')
+
+- Modified `CrawlProductDetailsJob` (`app/Jobs/Crawler/CrawlProductDetailsJob.php`)
+  - Added `checkForPriceDrop()` method called after `updateListing()`
+  - Emits `PriceDropped` event when price drop meets or exceeds threshold
+  - Uses `PriceDropReactor::calculateDropPercentage()` for calculation
+
+**Configuration options:**
+- `PRICE_ALERT_THRESHOLD_PERCENT=20` - Minimum percentage drop to trigger notification
+- `PRICE_ALERT_CHANNEL=log` - Options: `log`, `mail`, `slack`, `all`
+
+**Patterns established:**
+- Events in `app/Domain/Crawler/Events/` extend `ShouldBeStored`
+- Reactors auto-discover from `app/Domain/Crawler/Reactors/`
+- Notifications in `app/Notifications/` implement `ShouldQueue`
+- Price calculations use pence (integer) to avoid floating point issues
+
+**Gotchas:**
+- The reactor is auto-discovered by Spatie Event Sourcing - no manual registration needed
+- Threshold check uses `<` not `<=` so exactly threshold percentage triggers notification
+- Log channel writes to `single` channel with 'PRICE DROP ALERT' message
+- Mail/Slack channels use on-demand routing (no User model required)
+
+**Testing:**
+- Unit tests: `tests/Unit/Notifications/PriceDropNotificationTest.php` (10 tests)
+- Feature tests: `tests/Feature/Domain/Reactors/PriceDropReactorTest.php` (16 tests)
+
+**File locations:**
+- `app/Domain/Crawler/Events/PriceDropped.php`
+- `app/Domain/Crawler/Reactors/PriceDropReactor.php`
+- `app/Notifications/PriceDropNotification.php`
+- `config/services.php` (price_alerts section added)
+
+### Retailer Health Monitoring Reactor (f-f93db9) - Completed
+- Enhanced `UpdateRetailerHealthReactor` (`app/Domain/Crawler/Reactors/UpdateRetailerHealthReactor.php`)
+  - Now combines cache-based health metrics (for quick stats) with database-backed circuit breaker (for persistence)
+  - Listens to `CrawlCompleted` and `CrawlFailed` events
+  - On `CrawlCompleted`: resets `consecutive_failures` to 0, sets `health_status='healthy'`, clears `paused_until`
+  - On `CrawlFailed`: increments `consecutive_failures`, updates `last_failure_at`, applies circuit breaker logic
+
+- Created `RetailerHealthStatus` enum (`app/Enums/RetailerHealthStatus.php`)
+  - Cases: `Healthy`, `Degraded`, `Unhealthy`
+  - Includes `label()` and `color()` helper methods
+
+- Created migration `2026_01_27_110546_add_health_columns_to_retailers_table.php`
+  - Added `health_status` (string, default 'healthy')
+  - Added `last_failure_at` (timestamp, nullable)
+  - Added `consecutive_failures` (unsigned int, default 0)
+  - Added `paused_until` (timestamp, nullable)
+
+- Updated `Retailer` model (`app/Models/Retailer.php`)
+  - Added new columns to `$fillable`
+  - Added casts for `health_status` (enum), `last_failure_at`, `consecutive_failures`, `paused_until`
+  - Added `isPaused()` method - returns true if `paused_until` is in the future
+  - Added `isAvailableForCrawling()` method - returns true if active and not paused
+
+- Updated `RetailerFactory` (`database/factories/RetailerFactory.php`)
+  - Added default values for health columns
+  - Added `degraded()` state (5 consecutive failures)
+  - Added `unhealthy()` state (10 consecutive failures)
+  - Added `paused()` state (unhealthy + 1 hour pause)
+
+- Modified `DispatchRetailerCrawlsCommand` (`app/Console/Commands/DispatchRetailerCrawlsCommand.php`)
+  - Added query constraint to exclude paused retailers: `->where('paused_until', '<', now())->orWhereNull('paused_until')`
+
+**Circuit Breaker Thresholds:**
+- 5 consecutive failures: health_status = 'degraded'
+- 10 consecutive failures: health_status = 'unhealthy', paused_until = now() + 1 hour
+- 1 successful crawl: resets all health tracking
+
+**Static Helpers:**
+- `UpdateRetailerHealthReactor::getHealthMetrics(string $retailer)` - returns cache-based metrics
+- `UpdateRetailerHealthReactor::resetHealth(string $retailerSlug)` - manually resets health + clears cache
+
+**Patterns established:**
+- Enums in `app/Enums/` with `label()` and `color()` helpers
+- Combine cache-based metrics (for quick reads) with database (for persistence)
+- Circuit breaker pattern uses consecutive failures, not rate-based (more predictable)
+- Factory states for different health conditions (`degraded()`, `unhealthy()`, `paused()`)
+
+**Gotchas:**
+- The reactor matches retailer by `slug` from the CrawlStarted event (not retailer ID)
+- `paused_until` check in DispatchRetailerCrawlsCommand uses `< now()` not `<= now()`
+- Pause duration is not extended if already paused (only set when first hitting unhealthy threshold)
+- Successful crawl clears pause immediately, even if pause hasn't expired
+
+**Testing:**
+- Unit tests: `tests/Unit/Domain/Reactors/UpdateRetailerHealthReactorTest.php` (24 tests)
+- Feature tests: `tests/Feature/DispatchRetailerCrawlsCommandTest.php` (8 tests, 2 new for paused retailers)
+
+**File locations:**
+- `app/Enums/RetailerHealthStatus.php`
+- `app/Domain/Crawler/Reactors/UpdateRetailerHealthReactor.php`
+- `app/Models/Retailer.php`
+- `app/Console/Commands/DispatchRetailerCrawlsCommand.php`
+- `database/migrations/2026_01_27_110546_add_health_columns_to_retailers_table.php`
+- `database/factories/RetailerFactory.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

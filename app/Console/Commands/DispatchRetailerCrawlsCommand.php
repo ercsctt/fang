@@ -22,7 +22,11 @@ class DispatchRetailerCrawlsCommand extends Command
 
     public function handle(): int
     {
-        $query = Retailer::active();
+        $query = Retailer::active()
+            ->where(function ($q) {
+                $q->where('paused_until', '<', now())
+                    ->orWhereNull('paused_until');
+            });
 
         if ($retailerSlug = $this->option('retailer')) {
             $query->where('slug', $retailerSlug);
