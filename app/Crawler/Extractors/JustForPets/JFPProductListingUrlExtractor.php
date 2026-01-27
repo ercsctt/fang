@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Crawler\Extractors\JustForPets;
 
 use App\Crawler\Contracts\ExtractorInterface;
+use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\ExtractsPagination;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class JFPProductListingUrlExtractor implements ExtractorInterface
 {
+    use ExtractsPagination;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -52,6 +56,19 @@ class JFPProductListingUrlExtractor implements ExtractorInterface
         }
 
         Log::info('JFPProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
+
+        // Extract next page URL if available
+        $nextPageUrl = $this->findNextPageLink($crawler, $url);
+        if ($nextPageUrl !== null) {
+            $currentPage = $this->extractCurrentPageNumber($url);
+            yield new PaginatedUrl(
+                url: $nextPageUrl,
+                retailer: 'just-for-pets',
+                page: $currentPage + 1,
+                category: $this->extractCategory($url),
+                discoveredFrom: $url,
+            );
+        }
     }
 
     public function canHandle(string $url): bool
@@ -142,5 +159,13 @@ class JFPProductListingUrlExtractor implements ExtractorInterface
         }
 
         return null;
+    }
+
+    /**
+     * Normalize a pagination URL (required by ExtractsPagination trait).
+     */
+    protected function normalizePageUrl(string $href, string $baseUrl): string
+    {
+        return $this->normalizeUrl($href, $baseUrl);
     }
 }

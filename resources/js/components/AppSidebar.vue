@@ -14,7 +14,7 @@ import {
 import { dashboard } from '@/routes';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, Folder, Globe, LayoutGrid } from 'lucide-vue-next';
+import { Activity, BookOpen, Folder, Globe, LayoutGrid } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const mainNavItems: NavItem[] = [
@@ -22,6 +22,11 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Crawl Monitoring',
+        href: '/admin/crawl-monitoring',
+        icon: Activity,
     },
     {
         title: 'Scraper Tester',
