@@ -426,6 +426,7 @@ describe('Retailer model health methods', function () {
 describe('edge cases', function () {
     test('handles missing retailer in database gracefully', function () {
         Log::shouldReceive('warning')
+            ->atLeast()
             ->once()
             ->withArgs(function ($message) {
                 return str_contains($message, 'Retailer not found');

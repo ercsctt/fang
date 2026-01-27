@@ -719,5 +719,149 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 - `database/migrations/2026_01_27_110546_add_health_columns_to_retailers_table.php`
 - `database/factories/RetailerFactory.php`
 
+### Failed Job Monitoring and Alerting (f-d6749d) - Completed
+- Created `CrawlJobFailed` event (`app/Domain/Crawler/Events/CrawlJobFailed.php`)
+  - Extends `Spatie\EventSourcing\StoredEvents\ShouldBeStored` for event sourcing
+  - Properties: crawlId, retailerSlug, url, errorMessage, attemptNumber
+
+- Created `CrawlFailureAlertNotification` (`app/Notifications/CrawlFailureAlertNotification.php`)
+  - Implements `ShouldQueue` for async sending
+  - Supports mail and Slack notification channels
+  - Mail: Uses Laravel MailMessage with error level, retailer info, failure count, last URL, and error message
+  - Slack: Returns array format with attachments (no SlackMessage class required - package not installed)
+  - Dynamically enables channels based on config (`mail.crawl_alerts_to`, `services.slack.notifications.webhook`)
+
+- Updated `NotifyCrawlFailureReactor` (`app/Domain/Crawler/Reactors/NotifyCrawlFailureReactor.php`)
+  - Added `onCrawlJobFailed()` handler for new event type
+  - Counts failures from stored_events table (persisted event history)
+  - Added +1 to stored count to include current event being processed (event not yet committed when reactor fires)
+  - Threshold: 10 failures in 1 hour triggers alert
+  - Alert cooldown: 1 hour per retailer (prevents alert spam)
+  - Uses cache key `crawler:alert_sent:{retailerSlug}` for cooldown tracking
+  - Added `resetAlertCooldown()` public method for manual cooldown reset
+
+- Modified `CrawlProductDetailsJob` (`app/Jobs/Crawler/CrawlProductDetailsJob.php`)
+  - Added `failed(Throwable $exception)` method
+  - Dispatches `CrawlJobFailed` event with crawlId (UUID), retailerSlug, url, errorMessage, attemptNumber
+  - Added `getRetailerSlugFromCrawlerClass()` helper to extract slug from crawler class name (e.g., `BMCrawler` -> `b-m`)
+
+**Configuration options:**
+- `mail.crawl_alerts_to` - Email address for failure alerts
+- `services.slack.notifications.webhook` - Slack webhook URL for failure alerts
+
+**Patterns established:**
+- Job failure events use `Throwable` exception parameter in `failed()` method
+- Failure counting uses stored_events table for durability (not cache)
+- Alert cooldown uses cache for simplicity (doesn't need to persist across restarts)
+- Retailer slug extracted from crawler class name using `Str::slug(Str::snake(str_replace('Crawler', '', class_basename($class))))`
+
+**Gotchas:**
+- Stored event count doesn't include the current event being processed (add +1)
+- `Notification::fake()` in tests requires at least one channel to be configured, otherwise notification isn't "sent"
+- Slack notification channel package (`laravel/slack-notification-channel`) not installed - use array format instead of `SlackMessage` class
+- `via()` returns empty array when no channels configured - test must set config values
+
+**Testing:**
+- Unit tests: `tests/Unit/Domain/Reactors/NotifyCrawlFailureReactorTest.php` (10 tests)
+- Unit tests: `tests/Unit/Notifications/CrawlFailureAlertNotificationTest.php` (10 tests)
+- Feature tests: `tests/Feature/Crawler/CrawlProductDetailsJobTest.php` (4 new tests for failure handling)
+
+**File locations:**
+- `app/Domain/Crawler/Events/CrawlJobFailed.php`
+- `app/Notifications/CrawlFailureAlertNotification.php`
+- `app/Domain/Crawler/Reactors/NotifyCrawlFailureReactor.php`
+- `app/Jobs/Crawler/CrawlProductDetailsJob.php`
+
+### Data Quality Monitoring Command (f-959e94) - Completed
+- Created `DataQualityReportCommand` (`app/Console/Commands/DataQualityReportCommand.php`)
+  - Command signature: `crawl:quality-report`
+  - Options: `--retailer=` (filter by slug), `--export=csv` (export to CSV file)
+
+**Report includes per retailer:**
+1. Total listings count
+2. Missing data counts:
+   - Missing price (price_pence is null)
+   - Missing description (null or empty string)
+   - Missing images (null, empty array, or empty string)
+   - Missing brand (null or empty string)
+   - Missing ingredients (null or empty string)
+3. Completeness score percentage (fields_with_data / total_fields * 100)
+4. Stale listings count (last_scraped_at > 48 hours ago or null)
+5. Price anomalies (prices that changed >50% - detects from price history)
+
+**Implementation:**
+- Uses `ProductListing::query()` with `selectRaw()` for aggregation
+- Calculates completeness based on 6 fields: title, description, price_pence, brand, images, ingredients
+- Price anomaly detection uses self-join on `product_listing_prices` table
+- Uses Laravel Prompts (`info`, `note`, `warning`, `table`) for formatted CLI output
+- CSV export writes to `storage/app/data-quality-report-{timestamp}.csv`
+
+**Patterns established:**
+- Data quality commands use `selectRaw()` with `SUM(CASE WHEN...)` for efficient counts
+- Use `->subHours(48)` for stale data detection
+- Price anomaly detection compares consecutive price records
+
+**Gotchas:**
+- Must check for both null AND empty string for text fields
+- Images field needs to check for `'[]'` (empty array JSON) as well as null
+- Completeness score is calculated per-retailer, not per-listing
+
+**Testing:**
+- Feature tests: `tests/Feature/DataQualityReportCommandTest.php` (18 tests)
+- Tests cover: missing data counts, stale listings, completeness scores, retailer filtering, CSV export
+
+**File location:**
+- `app/Console/Commands/DataQualityReportCommand.php`
+
+### CrawlStatisticsProjector (f-f9f3f1) - Completed
+- Created `CrawlStatistic` model (`app/Models/CrawlStatistic.php`)
+  - Tracks daily crawl statistics per retailer
+  - BelongsTo `Retailer` relationship
+  - Has `getSuccessRateAttribute()` accessor for calculating success percentage
+  - Casts: date, crawls_started, crawls_completed, crawls_failed, listings_discovered, details_extracted, average_duration_ms
+
+- Created migration `2026_01_27_111048_create_crawl_statistics_table.php`
+  - Columns: id, retailer_id (foreign), date, crawls_started, crawls_completed, crawls_failed, listings_discovered, details_extracted, average_duration_ms (nullable)
+  - Unique constraint on (retailer_id, date)
+
+- Created `CrawlStatisticFactory` (`database/factories/CrawlStatisticFactory.php`)
+  - Generates realistic statistics with random started/completed/failed counts
+  - States: `perfect()` (no failures), `allFailed()` (all failures), `forDate(string $date)`
+
+- Created `CrawlStatisticsProjector` (`app/Domain/Crawler/Projectors/CrawlStatisticsProjector.php`)
+  - Extends `Spatie\EventSourcing\EventHandlers\Projectors\Projector`
+  - Auto-discovered via event-sourcing config `auto_discover_projectors_and_reactors`
+  - `onCrawlStarted`: increments crawls_started for retailer/date
+  - `onCrawlCompleted`: increments crawls_completed, adds listings_discovered, calculates running average duration
+  - `onCrawlFailed`: increments crawls_failed for retailer/date
+  - Uses `getRetailerFromCrawl()` to lookup retailer slug from CrawlStarted event (same pattern as UpdateRetailerHealthReactor)
+
+**Running Average Duration Calculation:**
+- `newAvg = ((currentAvg * completedCount) + newDuration) / (completedCount + 1)`
+- Null durations are skipped (average unchanged)
+- First crawl duration becomes the initial average
+
+**Patterns established:**
+- Projectors in `app/Domain/Crawler/Projectors/` are auto-discovered
+- Use `EloquentStoredEvent` to lookup related events by `aggregate_uuid`
+- Use `increment()` method instead of `DB::raw()` for atomic counter updates (avoids SQLite/Eloquent casting issues)
+- Create statistics record on first event, then increment thereafter
+
+**Gotchas:**
+- Don't use `DB::raw()` with `update()` - the Expression object gets assigned to model attributes and can't be cast to int
+- Use `$model->increment('column')` for atomic increments that also update the model instance
+- CrawlCompleted/CrawlFailed events don't have retailer info - must lookup from CrawlStarted event using `aggregate_uuid`
+- Event sourcing events are stored before projectors fire, so lookup will find the CrawlStarted event
+
+**Testing:**
+- Unit tests: `tests/Unit/Domain/Projectors/CrawlStatisticsProjectorTest.php` (19 tests)
+
+**File locations:**
+- `app/Models/CrawlStatistic.php`
+- `app/Domain/Crawler/Projectors/CrawlStatisticsProjector.php`
+- `database/migrations/2026_01_27_111048_create_crawl_statistics_table.php`
+- `database/factories/CrawlStatisticFactory.php`
+- `tests/Unit/Domain/Projectors/CrawlStatisticsProjectorTest.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
