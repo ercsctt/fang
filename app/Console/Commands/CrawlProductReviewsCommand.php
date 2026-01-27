@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Crawler\Extractors\BM\BMProductReviewsExtractor;
+use App\Crawler\Extractors\JustForPets\JFPProductReviewsExtractor;
+use App\Crawler\Extractors\Morrisons\MorrisonsProductReviewsExtractor;
+use App\Crawler\Extractors\Sainsburys\SainsburysProductReviewsExtractor;
 use App\Crawler\Extractors\Tesco\TescoProductReviewsExtractor;
 use App\Jobs\Crawler\CrawlProductReviewsJob;
 use App\Models\ProductListing;
@@ -31,6 +34,9 @@ class CrawlProductReviewsCommand extends Command
      */
     private array $extractorMap = [
         'bm' => BMProductReviewsExtractor::class,
+        'just-for-pets' => JFPProductReviewsExtractor::class,
+        'morrisons' => MorrisonsProductReviewsExtractor::class,
+        'sainsburys' => SainsburysProductReviewsExtractor::class,
         'tesco' => TescoProductReviewsExtractor::class,
     ];
 

@@ -370,5 +370,73 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 - `app/Crawler/Extractors/Asda/AsdaProductReviewsExtractor.php`
 - `app/Console/Commands/CrawlAsdaCommand.php`
 
+### Sainsbury's Crawler (f-1e7c5f) - Completed
+- Created `SainsburysCrawler` (`app/Crawler/Scrapers/SainsburysCrawler.php`)
+  - Extends `BaseCrawler`, registers all three extractors (URL, Details, Reviews)
+  - Starting URLs: 5 URLs covering dog food (all, dry, wet), dog treats, and puppy food
+  - Request delay: 2000ms (2 seconds between requests)
+  - Custom headers: Accept-Language and Accept headers for UK content
+  - Base URL: `www.sainsburys.co.uk` with `/gol-ui/` path for groceries
+
+- Updated `SainsburysProductListingUrlExtractor` (`app/Crawler/Extractors/Sainsburys/SainsburysProductListingUrlExtractor.php`)
+  - Extracts product URLs from category pages
+  - URL pattern: `/gol-ui/product/[product-name]--[product-code]` where product code is numeric
+  - Also handles alternative patterns: `/product/[name]-[code]`, `/shop/gb/groceries/[category]/[name]--[code]`
+  - Extracts product IDs from inline JSON data for dynamic pages
+  - Added `extractProductCodeFromUrl()` method for external ID extraction
+  - Extracts category from URL path
+
+- Used existing `SainsburysProductDetailsExtractor` (`app/Crawler/Extractors/Sainsburys/SainsburysProductDetailsExtractor.php`)
+  - Prioritizes JSON-LD structured data extraction (most reliable)
+  - Falls back to Sainsbury's-specific DOM selectors: `[data-test-id="pd-product-title"]`, `[data-test-id="pd-retail-price"]`
+  - Extracts Nectar price (loyalty card price) into metadata as `nectar_price_pence`
+  - Extracts multi-buy offers with text, quantity, and price
+  - Handles JSON-LD offers format (single object or array)
+  - 40+ known pet food brands including Sainsbury's own brands (Taste the Difference, Basics)
+  - Weight parsing supports kg, g, ml, l, lb, oz units
+  - External ID is the product code from URL (after `--`)
+
+- Created `SainsburysProductReviewsExtractor` (`app/Crawler/Extractors/Sainsburys/SainsburysProductReviewsExtractor.php`)
+  - Extracts reviews from JSON-LD structured data first
+  - Falls back to DOM-based extraction if no JSON-LD reviews found
+  - Supports Bazaarvoice review widget selectors (`.bv-content-item`, `.bv-content-review`)
+  - Handles various rating formats: data attributes, aria-label, star counts, percentage widths
+  - Generates deterministic external IDs: `sainsburys-review-{md5(body+author)}-{index}`
+  - Static helper: `buildReviewsUrl(productId, page)` for review pagination
+
+- Created `CrawlSainsburysCommand` (`app/Console/Commands/CrawlSainsburysCommand.php`)
+  - Command signature: `crawler:sainsburys`
+  - Options: `--queue=`, `--sync`
+
+- Updated `RetailerSeeder` with Sainsbury's crawler:
+  - crawler_class: `App\Crawler\Scrapers\SainsburysCrawler`
+  - rate_limit_ms: 2000 (2 seconds between requests)
+
+- Updated `CrawlProductReviewsCommand` extractor map:
+  - Added `sainsburys` -> `SainsburysProductReviewsExtractor`
+
+**Patterns established:**
+- Sainsbury's-specific extractors in `app/Crawler/Extractors/Sainsburys/`
+- Product code (after `--` in URL) is the external_id for Sainsbury's products
+- Nectar price stored in metadata as `nectar_price_pence`
+- Multi-buy offers stored in metadata with text, quantity, and price fields
+- Sainsbury's uses `data-test-id` and `data-testid` attributes for reliable DOM selection
+- May use Bazaarvoice for reviews (`.bv-*` selectors)
+
+**Gotchas:**
+- Sainsbury's groceries section uses `/gol-ui/` path prefix (Groceries Online UI)
+- Product codes are numeric and appear after `--` in URLs (e.g., `pedigree-dog-food--12345`)
+- JSON-LD offers can be single object or array (same pattern as Amazon/Tesco/Asda)
+- Nectar prices are loyalty card promotional prices - capture separately from regular prices
+- Reviews may be loaded via Bazaarvoice widget which has its own DOM structure
+- May require postcode cookie for availability (default UK postcode should work)
+
+**File locations:**
+- `app/Crawler/Scrapers/SainsburysCrawler.php`
+- `app/Crawler/Extractors/Sainsburys/SainsburysProductListingUrlExtractor.php`
+- `app/Crawler/Extractors/Sainsburys/SainsburysProductDetailsExtractor.php`
+- `app/Crawler/Extractors/Sainsburys/SainsburysProductReviewsExtractor.php`
+- `app/Console/Commands/CrawlSainsburysCommand.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
