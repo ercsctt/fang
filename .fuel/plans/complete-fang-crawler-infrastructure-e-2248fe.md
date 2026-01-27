@@ -438,5 +438,143 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 - `app/Crawler/Extractors/Sainsburys/SainsburysProductReviewsExtractor.php`
 - `app/Console/Commands/CrawlSainsburysCommand.php`
 
+### Just for Pets Crawler (f-e43361) - Completed
+- Used existing `JustForPetsCrawler` (`app/Crawler/Scrapers/JustForPetsCrawler.php`)
+  - Extends `BaseCrawler`, registers all three extractors (URL, Details, Reviews)
+  - Starting URLs: 4 URLs covering dog food (all, dry, wet) and dog treats
+  - Request delay: 1500ms (1.5 seconds between requests - simpler site, less aggressive)
+  - Base URL: `www.justforpetsonline.co.uk`
+
+- Used existing `JFPProductListingUrlExtractor` (`app/Crawler/Extractors/JustForPets/JFPProductListingUrlExtractor.php`)
+  - Extracts product URLs from category pages
+  - Supports multiple URL patterns: `/product/slug-id`, `/products/slug-id`, `/p/id`, `-p-id.html`, `slug-id.html`
+  - Extracts external ID from URL patterns
+  - Extracts category from source URL (dog, cat, puppy, etc.)
+  - Deduplicates URLs
+
+- Used existing `JFPProductDetailsExtractor` (`app/Crawler/Extractors/JustForPets/JFPProductDetailsExtractor.php`)
+  - Prioritizes JSON-LD structured data extraction (most reliable)
+  - Falls back to DOM selectors if JSON-LD unavailable
+  - Supports WooCommerce-style selectors (`.woocommerce-*`)
+  - Extracts: title, description, brand, price, images, ingredients, stock status, external ID
+  - 100+ known pet food brands for fallback brand extraction
+  - Weight parsing supports kg, g, ml, l, lb, oz units
+  - External ID from SKU in JSON-LD or URL patterns
+
+- Used existing `JFPProductReviewsExtractor` (`app/Crawler/Extractors/JustForPets/JFPProductReviewsExtractor.php`)
+  - Extracts reviews from JSON-LD structured data first
+  - Falls back to DOM-based extraction if no JSON-LD reviews found
+  - Supports WooCommerce review selectors (`.woocommerce-Reviews`, `.review`)
+  - Supports star rating extraction from multiple methods: data attributes, percentage widths, star counts
+  - Generates deterministic external IDs: `jfp-review-{md5(author+body)}-{index}`
+
+- Used existing `CrawlJustForPetsCommand` (`app/Console/Commands/CrawlJustForPetsCommand.php`)
+  - Command signature: `crawler:just-for-pets`
+  - Options: `--queue=`, `--sync`
+
+- Updated `CrawlProductReviewsCommand` extractor map:
+  - Added `just-for-pets` -> `JFPProductReviewsExtractor`
+
+- RetailerSeeder already had Just for Pets entry:
+  - base_url: `https://www.justforpetsonline.co.uk`
+  - crawler_class: `App\Crawler\Scrapers\JustForPetsCrawler`
+  - rate_limit_ms: 1500 (1.5 seconds between requests)
+
+**Patterns established:**
+- JFP-specific extractors in `app/Crawler/Extractors/JustForPets/`
+- External ID sourced from SKU in JSON-LD, or extracted from URL patterns
+- Standard WooCommerce-style selectors work well for simpler e-commerce sites
+- Rating extraction via percentage width (WooCommerce style): `width: 80%` → 4 stars
+
+**Gotchas:**
+- Multiple URL patterns exist: `/product/`, `/products/`, `/p/`, `-p-`, `slug-id.html`
+- Category extraction from URL path matches first animal name (dog, cat, puppy, kitten)
+- Pest test name collisions: avoid `/p/` and `-p-` in test names as they generate similar method names
+- JSON-LD offers can be single object or array (same pattern as other retailers)
+
+**Testing:**
+- Unit tests: `tests/Unit/Crawler/Extractors/JustForPets/JFPProductListingUrlExtractorTest.php` (27 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/JustForPets/JFPProductDetailsExtractorTest.php` (54 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/JustForPets/JFPProductReviewsExtractorTest.php` (40 tests)
+
+**File locations:**
+- `app/Crawler/Scrapers/JustForPetsCrawler.php`
+- `app/Crawler/Extractors/JustForPets/JFPProductListingUrlExtractor.php`
+- `app/Crawler/Extractors/JustForPets/JFPProductDetailsExtractor.php`
+- `app/Crawler/Extractors/JustForPets/JFPProductReviewsExtractor.php`
+- `app/Console/Commands/CrawlJustForPetsCommand.php`
+
+### Morrisons Crawler (f-d2850a) - Completed
+- Created `MorrisonsCrawler` (`app/Crawler/Scrapers/MorrisonsCrawler.php`)
+  - Extends `BaseCrawler`, registers all three extractors (URL, Details, Reviews)
+  - Starting URLs: 5 URLs covering dog food (main, dry, wet), dog treats, and puppy food
+  - Request delay: 2000ms (2 seconds between requests)
+  - Custom headers: Full browser-like headers including Sec-Fetch-* to mimic browser behavior
+  - Base URL: `groceries.morrisons.com` (separate subdomain from main morrisons.com)
+
+- Created `MorrisonsProductListingUrlExtractor` (`app/Crawler/Extractors/Morrisons/MorrisonsProductListingUrlExtractor.php`)
+  - Extracts product URLs from category/browse pages
+  - URL pattern: `/products/[product-slug]/[SKU]` where SKU can be numeric or alphanumeric
+  - Handles browse pages (`/browse/pet/`), search pages, category pages
+  - Normalizes all URLs to absolute form with `groceries.morrisons.com`
+  - Extracts category from URL path
+
+- Created `MorrisonsProductDetailsExtractor` (`app/Crawler/Extractors/Morrisons/MorrisonsProductDetailsExtractor.php`)
+  - Prioritizes JSON-LD structured data extraction (most reliable)
+  - Falls back to Morrisons-specific DOM selectors: `[data-test="product-title"]`, `[data-test="product-price"]`
+  - Extracts Price Dropped promotional price into metadata as `price_dropped_pence`
+  - Extracts My Morrisons member price into metadata as `my_morrisons_price_pence`
+  - Handles JSON-LD offers format (single object or array)
+  - 50+ known pet food brands including Morrisons own brands (The Best, Savers)
+  - Weight parsing supports kg, g, ml, l, lb, oz units
+  - External ID is the SKU from URL (last segment after product slug)
+
+- Created `MorrisonsProductReviewsExtractor` (`app/Crawler/Extractors/Morrisons/MorrisonsProductReviewsExtractor.php`)
+  - Extracts reviews from JSON-LD structured data first
+  - Falls back to DOM-based extraction if no JSON-LD reviews found
+  - Handles various rating formats: data attributes, itemprop, star counts
+  - Generates deterministic external IDs: `morrisons-review-{md5(url+author+body)}-{index}`
+
+- Created `CrawlMorrisonsCommand` (`app/Console/Commands/CrawlMorrisonsCommand.php`)
+  - Command signature: `crawler:morrisons`
+  - Options: `--queue=`, `--sync`
+  - Uses `useAdvancedAdapter: true` for reliable scraping (React frontend)
+
+- Updated `RetailerSeeder` with Morrisons entry:
+  - base_url: `https://groceries.morrisons.com` (not www.morrisons.com)
+  - crawler_class: `App\Crawler\Scrapers\MorrisonsCrawler`
+  - rate_limit_ms: 2000 (2 seconds between requests)
+
+- Updated `CrawlProductReviewsCommand` extractor map:
+  - Added `morrisons` -> `MorrisonsProductReviewsExtractor`
+
+**Patterns established:**
+- Morrisons-specific extractors in `app/Crawler/Extractors/Morrisons/`
+- SKU is the external_id for Morrisons products (extracted from URL)
+- Price Dropped price stored in metadata as `price_dropped_pence`
+- My Morrisons member price stored in metadata as `my_morrisons_price_pence`
+- Morrisons uses `data-test` attributes for reliable DOM selection
+
+**Gotchas:**
+- Morrisons Groceries is on `groceries.morrisons.com`, not `www.morrisons.com`
+- React-based frontend may require JavaScript rendering for full content
+- May require postcode selection for store availability
+- Price Dropped items are promotional prices that need capturing
+- My Morrisons offers show loyalty member prices - capture separately
+- JSON-LD offers can be single object or array (same pattern as other retailers)
+- SKUs can be alphanumeric, not just numeric
+
+**Testing:**
+- Unit tests: `tests/Unit/Crawler/Extractors/Morrisons/MorrisonsProductListingUrlExtractorTest.php` (18 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/Morrisons/MorrisonsProductDetailsExtractorTest.php` (35 tests)
+- Unit tests: `tests/Unit/Crawler/Extractors/Morrisons/MorrisonsProductReviewsExtractorTest.php` (31 tests)
+
+**File locations:**
+- `app/Crawler/Scrapers/MorrisonsCrawler.php`
+- `app/Crawler/Extractors/Morrisons/MorrisonsProductListingUrlExtractor.php`
+- `app/Crawler/Extractors/Morrisons/MorrisonsProductDetailsExtractor.php`
+- `app/Crawler/Extractors/Morrisons/MorrisonsProductReviewsExtractor.php`
+- `app/Console/Commands/CrawlMorrisonsCommand.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
