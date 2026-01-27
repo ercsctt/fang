@@ -24,6 +24,7 @@ class ProductMatcher
 
     public function __construct(
         private readonly ProductNormalizer $normalizer,
+        private readonly CategoryNormalizer $categoryNormalizer,
     ) {}
 
     /**
@@ -88,7 +89,7 @@ class ProductMatcher
     }
 
     /**
-     * Find an exact match: same brand + normalized name + weight/quantity.
+     * Find an exact match: same brand + normalized name + weight/quantity + category.
      *
      * @return array{product: Product, confidence: float}|null
      */
@@ -100,10 +101,18 @@ class ProductMatcher
 
         $normalizedBrand = $this->normalizer->normalizeBrand($listing->brand);
         $normalizedTitle = $this->normalizer->normalizeTitle($listing->title);
+        $listingCanonicalCategory = $this->categoryNormalizer->normalizeWithContext(
+            $listing->category,
+            $listing->title
+        );
 
-        // Query products with same normalized brand
+        // Query products with same normalized brand and category
         $candidates = Product::query()
             ->whereNotNull('brand')
+            ->when($listingCanonicalCategory !== \App\Enums\CanonicalCategory::Other, function ($query) use ($listingCanonicalCategory) {
+                // Prefer products with matching canonical category, but don't exclude others
+                $query->orderByRaw('CASE WHEN canonical_category = ? THEN 0 ELSE 1 END', [$listingCanonicalCategory->value]);
+            })
             ->get();
 
         $bestMatch = null;
@@ -172,11 +181,21 @@ class ProductMatcher
             return null;
         }
 
+        $listingCanonicalCategory = $this->categoryNormalizer->normalizeWithContext(
+            $listing->category,
+            $listing->title
+        );
+
         $bestMatch = null;
         $bestConfidence = 0.0;
 
         // Query all products (in production, this should be optimized)
-        $candidates = Product::query()->get();
+        // Prefer products with matching canonical category
+        $candidates = Product::query()
+            ->when($listingCanonicalCategory !== \App\Enums\CanonicalCategory::Other, function ($query) use ($listingCanonicalCategory) {
+                $query->orderByRaw('CASE WHEN canonical_category = ? THEN 0 ELSE 1 END', [$listingCanonicalCategory->value]);
+            })
+            ->get();
 
         foreach ($candidates as $product) {
             // Calculate title similarity
@@ -223,8 +242,8 @@ class ProductMatcher
         Product $product,
         float $titleSimilarity,
     ): float {
-        // Base score from title similarity (weighted 50%)
-        $score = $titleSimilarity * 0.5;
+        // Base score from title similarity (weighted 40%)
+        $score = $titleSimilarity * 0.4;
 
         // Brand match bonus (weighted 25%)
         if ($this->normalizer->brandsMatch($listing->brand, $product->brand)) {
@@ -234,24 +253,38 @@ class ProductMatcher
             $score += 12.5;
         }
 
-        // Weight match bonus (weighted 15%)
-        if ($listing->weight_grams !== null && $product->weight_grams !== null) {
-            if ($this->normalizer->weightsMatch($listing->weight_grams, $product->weight_grams)) {
+        // Category match bonus (weighted 15%)
+        if ($product->canonical_category !== null) {
+            $listingCanonicalCategory = $this->categoryNormalizer->normalizeWithContext(
+                $listing->category,
+                $listing->title
+            );
+            if ($listingCanonicalCategory === $product->canonical_category) {
                 $score += 15.0;
             }
         } else {
-            // No penalty if weight unavailable
-            $score += 7.5;
+            // No penalty if product category not set yet
+            $score += 15.0;
         }
 
-        // Quantity match bonus (weighted 10%)
+        // Weight match bonus (weighted 12%)
+        if ($listing->weight_grams !== null && $product->weight_grams !== null) {
+            if ($this->normalizer->weightsMatch($listing->weight_grams, $product->weight_grams)) {
+                $score += 12.0;
+            }
+        } else {
+            // No penalty if weight unavailable
+            $score += 6.0;
+        }
+
+        // Quantity match bonus (weighted 8%)
         if ($listing->quantity !== null && $product->quantity !== null) {
             if ($listing->quantity === $product->quantity) {
-                $score += 10.0;
+                $score += 8.0;
             }
         } else {
             // No penalty if quantity unavailable
-            $score += 5.0;
+            $score += 4.0;
         }
 
         return min(100.0, $score);
@@ -294,12 +327,17 @@ class ProductMatcher
     private function createProductFromListing(ProductListing $listing): Product
     {
         $normalizedBrand = $this->normalizer->normalizeBrand($listing->brand);
+        $canonicalCategory = $this->categoryNormalizer->normalizeWithContext(
+            $listing->category,
+            $listing->title
+        );
 
         $product = Product::query()->create([
             'name' => $listing->title,
             'brand' => $normalizedBrand,
             'description' => $listing->description,
             'category' => $listing->category ?? 'Dog Food',
+            'canonical_category' => $canonicalCategory,
             'weight_grams' => $listing->weight_grams,
             'quantity' => $listing->quantity,
             'primary_image' => $listing->images[0] ?? null,
@@ -312,6 +350,7 @@ class ProductMatcher
             'product_id' => $product->id,
             'listing_id' => $listing->id,
             'name' => $product->name,
+            'canonical_category' => $canonicalCategory->value,
         ]);
 
         return $product;

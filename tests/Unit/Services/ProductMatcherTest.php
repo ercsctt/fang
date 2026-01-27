@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductListing;
 use App\Models\ProductListingMatch;
 use App\Models\Retailer;
+use App\Services\CategoryNormalizer;
 use App\Services\ProductMatcher;
 use App\Services\ProductNormalizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,10 +17,11 @@ uses(RefreshDatabase::class);
 function setupMatcher(): array
 {
     $normalizer = new ProductNormalizer;
-    $matcher = new ProductMatcher($normalizer);
+    $categoryNormalizer = new CategoryNormalizer;
+    $matcher = new ProductMatcher($normalizer, $categoryNormalizer);
     $retailer = Retailer::factory()->create();
 
-    return compact('normalizer', 'matcher', 'retailer');
+    return compact('normalizer', 'categoryNormalizer', 'matcher', 'retailer');
 }
 
 // Exact matching tests
