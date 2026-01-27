@@ -24,6 +24,7 @@ describe('job execution', function () {
             'brand' => 'Pedigree',
             'weight_grams' => 2000,
             'quantity' => 1,
+            'canonical_category' => \App\Enums\CanonicalCategory::DryFood,
         ]);
 
         $listing = ProductListing::factory()->create([
@@ -32,6 +33,7 @@ describe('job execution', function () {
             'brand' => 'Pedigree',
             'weight_grams' => 2000,
             'quantity' => 1,
+            'category' => 'Dry Food',
         ]);
 
         $job = new MatchProductListingJob($listing->id);

@@ -68,6 +68,7 @@ class Product extends Model
     public function productListings(): BelongsToMany
     {
         return $this->belongsToMany(ProductListing::class, 'product_listing_matches')
+            ->withPivot(['confidence_score', 'match_type', 'matched_at', 'verified_by', 'verified_at'])
             ->withTimestamps();
     }
 
