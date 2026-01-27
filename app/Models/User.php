@@ -59,4 +59,12 @@ class User extends Authenticatable
     {
         return $this->hasMany(PriceAlert::class);
     }
+
+    /**
+     * @return HasMany<ProductExport, $this>
+     */
+    public function productExports(): HasMany
+    {
+        return $this->hasMany(ProductExport::class);
+    }
 }
