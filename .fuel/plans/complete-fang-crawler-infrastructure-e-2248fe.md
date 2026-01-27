@@ -576,5 +576,31 @@ Finish the crawler infrastructure including scheduling, additional retailers, te
 - `app/Crawler/Extractors/Morrisons/MorrisonsProductReviewsExtractor.php`
 - `app/Console/Commands/CrawlMorrisonsCommand.php`
 
+### Queue Monitoring Command (f-dba447) - Completed
+- Created `QueueMonitorCommand` (`app/Console/Commands/QueueMonitorCommand.php`)
+  - Command signature: `queue:monitor`
+  - Options: `--json` (machine-readable JSON output)
+
+**Output includes:**
+1. Pending jobs grouped by queue (from `jobs` table)
+2. Processed events in last hour/day (from `stored_events` table)
+3. Events breakdown by type (last hour)
+4. Failed jobs count, by queue, and recent failures with exception summaries
+5. Crawl-specific statistics:
+   - Listings created/updated today
+   - Reviews extracted today
+   - Prices recorded today
+   - Crawl-related events
+
+**Implementation notes:**
+- Uses Laravel Prompts functions (`info`, `note`, `warning`, `table`) for nice CLI display
+- Uses DB facade for direct table queries (no Eloquent needed for stats)
+- JSON output includes full data structure for machine parsing
+- Extracts first line of exception for summary display
+- Uses `class_basename()` for cleaner event type display
+
+**File location:**
+- `app/Console/Commands/QueueMonitorCommand.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
