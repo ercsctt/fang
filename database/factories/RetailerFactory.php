@@ -27,7 +27,7 @@ class RetailerFactory extends Factory
             'slug' => Str::slug($name),
             'base_url' => 'https://www.'.$domain,
             'crawler_class' => null,
-            'status' => RetailerStatus::Active,
+            'status' => RetailerStatus::default(),
             'consecutive_failures' => 0,
             'last_failure_at' => null,
             'paused_until' => null,

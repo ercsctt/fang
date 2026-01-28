@@ -24,14 +24,12 @@ Schedule::command('crawler:dispatch-all --delay=300')
     ->timezone('Europe/London')
     ->withoutOverlapping(expiresAt: 180)
     ->onOneServer()
-    ->appendOutputTo(storage_path('logs/crawler-schedule.log'))
     ->description('Daily product listing crawl for all active retailers');
 
 Schedule::command('retailers:resume-expired')
     ->hourly()
     ->timezone('Europe/London')
     ->onOneServer()
-    ->appendOutputTo(storage_path('logs/retailer-resume.log'))
     ->description('Auto-resume retailers whose pause period has expired');
 
 /*
@@ -64,9 +62,9 @@ Schedule::command('retailers:resume-expired')
 |
 */
 
-Schedule::job(new \App\Jobs\CleanupOrphanedImagesJob(daysOld: 30))
-    ->dailyAt('04:00')
-    ->timezone('Europe/London')
-    ->onOneServer()
-    ->appendOutputTo(storage_path('logs/image-cleanup.log'))
-    ->description('Daily cleanup of orphaned images not accessed in 30+ days');
+//Schedule::job(new \App\Jobs\CleanupOrphanedImagesJob(daysOld: 30))
+//    ->dailyAt('04:00')
+//    ->timezone('Europe/London')
+//    ->onOneServer()
+//    ->appendOutputTo(storage_path('logs/image-cleanup.log'))
+//    ->description('Daily cleanup of orphaned images not accessed in 30+ days');

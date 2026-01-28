@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\JustForPets\JFPProductDetailsExtractor;
 use App\Crawler\Services\CategoryExtractor;
+use App\Services\ProductNormalizer;
 
 beforeEach(function () {
     $this->extractor = new JFPProductDetailsExtractor(
@@ -247,31 +248,31 @@ describe('price parsing', function () {
 
 describe('weight parsing', function () {
     test('parses weight in kilograms', function () {
-        expect($this->extractor->parseWeight('2.5kg'))->toBe(2500);
+        expect(app(ProductNormalizer::class)->parseWeight('2.5kg'))->toBe(2500);
     });
 
     test('parses weight in grams', function () {
-        expect($this->extractor->parseWeight('400g'))->toBe(400);
+        expect(app(ProductNormalizer::class)->parseWeight('400g'))->toBe(400);
     });
 
     test('parses weight in litres', function () {
-        expect($this->extractor->parseWeight('1.5l'))->toBe(1500);
+        expect(app(ProductNormalizer::class)->parseWeight('1.5l'))->toBe(1500);
     });
 
     test('parses weight with space before unit', function () {
-        expect($this->extractor->parseWeight('3 kg'))->toBe(3000);
+        expect(app(ProductNormalizer::class)->parseWeight('3 kg'))->toBe(3000);
     });
 
     test('parses weight in pounds', function () {
-        expect($this->extractor->parseWeight('5lb'))->toBe(2270); // 5 * 454.0
+        expect(app(ProductNormalizer::class)->parseWeight('5lb'))->toBe(2270); // 5 * 454.0
     });
 
     test('parses weight in ounces', function () {
-        expect($this->extractor->parseWeight('10oz'))->toBe(280);
+        expect(app(ProductNormalizer::class)->parseWeight('10oz'))->toBe(280);
     });
 
     test('returns null for no weight found', function () {
-        expect($this->extractor->parseWeight('Dog Food Adult'))->toBeNull();
+        expect(app(ProductNormalizer::class)->parseWeight('Dog Food Adult'))->toBeNull();
     });
 
     test('extracts weight from product title', function () {

@@ -27,6 +27,8 @@ use Symfony\Component\DomCrawler\Crawler;
  */
 abstract class BaseProductReviewsExtractor implements ExtractorInterface
 {
+    use SelectsElements;
+
     /**
      * Extract reviews from HTML content.
      *
@@ -79,20 +81,21 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
             }
         }
 
-        // Check page title for common block indicators
-        try {
-            $titleNode = $crawler->filter('title');
-            if ($titleNode->count() > 0) {
-                $title = strtolower($titleNode->text());
-                $titleBlockIndicators = ['sorry', 'robot', 'blocked', 'captcha', 'access denied'];
-                foreach ($titleBlockIndicators as $indicator) {
-                    if (str_contains($title, $indicator)) {
-                        return true;
-                    }
+        $titleNode = $this->selectFirst(
+            $crawler,
+            ['title'],
+            'Blocked page title',
+            fn (Crawler $node) => trim($node->text()) !== ''
+        );
+
+        if ($titleNode !== null) {
+            $title = strtolower($titleNode->text());
+            $titleBlockIndicators = ['sorry', 'robot', 'blocked', 'captcha', 'access denied'];
+            foreach ($titleBlockIndicators as $indicator) {
+                if (str_contains($title, $indicator)) {
+                    return true;
                 }
             }
-        } catch (\Exception $e) {
-            // Continue
         }
 
         return false;
@@ -107,42 +110,46 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
     {
         $reviews = [];
 
-        try {
-            $scripts = $crawler->filter('script[type="application/ld+json"]');
+        $scripts = $this->selectAll(
+            $crawler,
+            ['script[type="application/ld+json"]'],
+            'JSON-LD reviews'
+        );
 
-            $scripts->each(function (Crawler $node) use (&$reviews) {
-                $json = json_decode($node->text(), true);
-                if ($json === null) {
-                    return;
-                }
+        if ($scripts === null) {
+            return;
+        }
 
-                // Handle @graph format
-                if (isset($json['@graph']) && is_array($json['@graph'])) {
-                    foreach ($json['@graph'] as $item) {
-                        if ($this->isProductWithReviews($item)) {
-                            $reviews = $item['review'] ?? [];
-                        }
-                    }
-                }
-
-                // Handle direct Product type
-                if ($this->isProductWithReviews($json)) {
-                    $reviews = $json['review'] ?? [];
-                }
-            });
-
-            if (empty($reviews)) {
+        $scripts->each(function (Crawler $node) use (&$reviews) {
+            $json = json_decode($node->text(), true);
+            if ($json === null) {
                 return;
             }
 
-            foreach ($reviews as $index => $reviewData) {
-                $review = $this->parseJsonLdReview($reviewData, $url, $index);
-                if ($review !== null) {
-                    yield $review;
+            // Handle @graph format
+            if (isset($json['@graph']) && is_array($json['@graph'])) {
+                foreach ($json['@graph'] as $item) {
+                    if ($this->isProductWithReviews($item)) {
+                        $reviews = $item['review'] ?? [];
+                    }
                 }
             }
-        } catch (\Exception $e) {
-            Log::debug("{$this->getExtractorName()}: JSON-LD extraction failed: {$e->getMessage()}");
+
+            // Handle direct Product type
+            if ($this->isProductWithReviews($json)) {
+                $reviews = $json['review'] ?? [];
+            }
+        });
+
+        if (empty($reviews)) {
+            return;
+        }
+
+        foreach ($reviews as $index => $reviewData) {
+            $review = $this->parseJsonLdReview($reviewData, $url, $index);
+            if ($review !== null) {
+                yield $review;
+            }
         }
     }
 
@@ -233,23 +240,18 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function extractFromDom(Crawler $crawler, string $url): Generator
     {
-        foreach ($this->getReviewSelectors() as $selector) {
-            try {
-                $reviews = $crawler->filter($selector);
-                if ($reviews->count() > 0) {
-                    $index = 0;
-                    foreach ($reviews as $reviewNode) {
-                        $review = $this->parseDomReview(new Crawler($reviewNode), $url, $index);
-                        if ($review !== null) {
-                            yield $review;
-                            $index++;
-                        }
-                    }
+        $reviews = $this->selectAll($crawler, $this->getReviewSelectors(), 'Reviews');
 
-                    break; // Found reviews, stop trying other selectors
-                }
-            } catch (\Exception $e) {
-                Log::debug("{$this->getExtractorName()}: DOM selector {$selector} failed: {$e->getMessage()}");
+        if ($reviews === null) {
+            return;
+        }
+
+        $index = 0;
+        foreach ($reviews as $reviewNode) {
+            $review = $this->parseDomReview(new Crawler($reviewNode), $url, $index);
+            if ($review !== null) {
+                yield $review;
+                $index++;
             }
         }
     }
@@ -325,7 +327,6 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function extractRatingFromDom(Crawler $node): ?float
     {
-        // Try data attributes on node itself first
         $ratingAttrs = ['data-rating', 'data-score', 'data-stars'];
         foreach ($ratingAttrs as $attr) {
             $value = $node->attr($attr);
@@ -334,82 +335,58 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
             }
         }
 
-        // Try store-specific rating selectors
-        foreach ($this->getRatingSelectors() as $selector) {
-            try {
-                $ratingElement = $node->filter($selector);
-                if ($ratingElement->count() > 0) {
-                    foreach ($ratingAttrs as $attr) {
-                        $value = $ratingElement->first()->attr($attr);
-                        if ($value !== null && is_numeric($value)) {
-                            return (float) $value;
-                        }
-                    }
+        $ratingElement = $this->selectFirst(
+            $node,
+            $this->getRatingSelectors(),
+            'Rating',
+            fn (Crawler $candidate) => $this->extractRatingValueFromElement($candidate) !== null
+        );
 
-                    // Try aria-label for accessibility-friendly rating
-                    $ariaLabel = $ratingElement->first()->attr('aria-label');
-                    if ($ariaLabel !== null && preg_match('/(\d+(?:\.\d+)?)\s*(?:\/\s*5|out of 5|stars?)/i', $ariaLabel, $matches)) {
-                        return (float) $matches[1];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
+        if ($ratingElement !== null) {
+            $value = $this->extractRatingValueFromElement($ratingElement);
+            if ($value !== null) {
+                return $value;
             }
         }
 
-        // Try meta/span with itemprop
-        try {
-            $ratingNode = $node->filter('[itemprop="ratingValue"]');
-            if ($ratingNode->count() > 0) {
-                $value = $ratingNode->attr('content') ?? $ratingNode->text();
-                if (is_numeric($value)) {
-                    return (float) $value;
-                }
+        $ratingNode = $this->selectFirst($node, ['[itemprop="ratingValue"]'], 'Rating');
+        if ($ratingNode !== null) {
+            $value = $ratingNode->attr('content') ?? $ratingNode->text();
+            if (is_numeric($value)) {
+                return (float) $value;
             }
-        } catch (\Exception $e) {
-            // Continue
         }
 
-        // Try counting filled stars
-        try {
-            $filledStars = $node->filter($this->getFilledStarSelector());
-            if ($filledStars->count() > 0) {
-                return (float) $filledStars->count();
-            }
-        } catch (\Exception $e) {
-            // Continue
+        $filledStars = $this->selectAll($node, [$this->getFilledStarSelector()], 'Rating');
+        if ($filledStars !== null) {
+            return (float) $filledStars->count();
         }
 
-        // Try percentage width style (common rating display)
-        try {
-            $ratingNode = $node->filter('.rating-stars, .star-rating, .bv-rating-stars-on');
-            if ($ratingNode->count() > 0) {
-                $style = $ratingNode->attr('style');
-                if ($style && preg_match('/width:\s*(\d+(?:\.\d+)?)\s*%/', $style, $matches)) {
-                    // Convert percentage to 5-star rating
-                    return round((float) $matches[1] / 20, 1);
-                }
+        $ratingNode = $this->selectFirst(
+            $node,
+            ['.rating-stars, .star-rating, .bv-rating-stars-on'],
+            'Rating',
+            fn (Crawler $candidate) => $this->extractRatingFromStyle($candidate) !== null
+        );
+
+        if ($ratingNode !== null) {
+            $value = $this->extractRatingFromStyle($ratingNode);
+            if ($value !== null) {
+                return $value;
             }
-        } catch (\Exception $e) {
-            // Continue
         }
 
-        // Try text-based rating
-        $textSelectors = ['.rating', '.stars', '.review-rating'];
-        foreach ($textSelectors as $selector) {
-            try {
-                $ratingNode = $node->filter($selector);
-                if ($ratingNode->count() > 0) {
-                    $text = $ratingNode->text();
-                    if (preg_match('/(\d+(?:\.\d+)?)\s*(?:\/\s*5|out of 5|stars?)/i', $text, $matches)) {
-                        return (float) $matches[1];
-                    }
-                    if (preg_match('/^(\d+(?:\.\d+)?)$/', trim($text), $matches)) {
-                        return (float) $matches[1];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
+        $ratingNode = $this->selectFirst(
+            $node,
+            ['.rating', '.stars', '.review-rating'],
+            'Rating',
+            fn (Crawler $candidate) => $this->extractRatingFromText($candidate->text()) !== null
+        );
+
+        if ($ratingNode !== null) {
+            $value = $this->extractRatingFromText($ratingNode->text());
+            if ($value !== null) {
+                return $value;
             }
         }
 
@@ -423,21 +400,14 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function extractTextFromSelectors(Crawler $node, array $selectors): ?string
     {
-        foreach ($selectors as $selector) {
-            try {
-                $element = $node->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text)) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
+        $element = $this->selectFirst(
+            $node,
+            $selectors,
+            'Review text',
+            fn (Crawler $candidate) => trim($candidate->text()) !== ''
+        );
 
-        return null;
+        return $element !== null ? trim($element->text()) : null;
     }
 
     /**
@@ -445,24 +415,14 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function extractDateFromDom(Crawler $node): ?DateTimeInterface
     {
-        foreach ($this->getDateSelectors() as $selector) {
-            try {
-                $dateNode = $node->filter($selector);
-                if ($dateNode->count() > 0) {
-                    $dateStr = $dateNode->attr('datetime')
-                        ?? $dateNode->attr('content')
-                        ?? $dateNode->text();
+        $dateNode = $this->selectFirst(
+            $node,
+            $this->getDateSelectors(),
+            'Review date',
+            fn (Crawler $candidate) => $this->parseDateFromNode($candidate) !== null
+        );
 
-                    if ($dateStr) {
-                        return new DateTimeImmutable($dateStr);
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        return null;
+        return $dateNode !== null ? $this->parseDateFromNode($dateNode) : null;
     }
 
     /**
@@ -470,14 +430,8 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function isVerifiedPurchase(Crawler $node): bool
     {
-        foreach ($this->getVerifiedPurchaseSelectors() as $selector) {
-            try {
-                if ($node->filter($selector)->count() > 0) {
-                    return true;
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
+        if ($this->selectFirst($node, $this->getVerifiedPurchaseSelectors(), 'Verified purchase') !== null) {
+            return true;
         }
 
         // Check for verified text
@@ -498,21 +452,82 @@ abstract class BaseProductReviewsExtractor implements ExtractorInterface
      */
     protected function extractHelpfulCount(Crawler $node): int
     {
-        foreach ($this->getHelpfulCountSelectors() as $selector) {
-            try {
-                $helpfulNode = $node->filter($selector);
-                if ($helpfulNode->count() > 0) {
-                    $text = $helpfulNode->attr('data-helpful-count') ?? $helpfulNode->text();
-                    if (preg_match('/(\d+)/', $text, $matches)) {
-                        return (int) $matches[1];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
+        $helpfulNode = $this->selectFirst(
+            $node,
+            $this->getHelpfulCountSelectors(),
+            'Helpful count',
+            fn (Crawler $candidate) => $this->extractHelpfulCountFromNode($candidate) !== null
+        );
+
+        return $helpfulNode !== null ? $this->extractHelpfulCountFromNode($helpfulNode) : 0;
+    }
+
+    protected function extractRatingValueFromElement(Crawler $ratingElement): ?float
+    {
+        $ratingAttrs = ['data-rating', 'data-score', 'data-stars'];
+        foreach ($ratingAttrs as $attr) {
+            $value = $ratingElement->attr($attr);
+            if ($value !== null && is_numeric($value)) {
+                return (float) $value;
             }
         }
 
-        return 0;
+        $ariaLabel = $ratingElement->attr('aria-label');
+        if ($ariaLabel !== null && preg_match('/(\d+(?:\.\d+)?)\s*(?:\/\s*5|out of 5|stars?)/i', $ariaLabel, $matches)) {
+            return (float) $matches[1];
+        }
+
+        return $this->extractRatingFromText($ratingElement->text());
+    }
+
+    protected function extractRatingFromText(string $text): ?float
+    {
+        if (preg_match('/(\d+(?:\.\d+)?)\s*(?:\/\s*5|out of 5|stars?)/i', $text, $matches)) {
+            return (float) $matches[1];
+        }
+
+        if (preg_match('/^(\d+(?:\.\d+)?)$/', trim($text), $matches)) {
+            return (float) $matches[1];
+        }
+
+        return null;
+    }
+
+    protected function extractRatingFromStyle(Crawler $ratingNode): ?float
+    {
+        $style = $ratingNode->attr('style');
+        if ($style && preg_match('/width:\s*(\d+(?:\.\d+)?)\s*%/', $style, $matches)) {
+            return round((float) $matches[1] / 20, 1);
+        }
+
+        return null;
+    }
+
+    protected function parseDateFromNode(Crawler $dateNode): ?DateTimeImmutable
+    {
+        $dateStr = $dateNode->attr('datetime')
+            ?? $dateNode->attr('content')
+            ?? $dateNode->text();
+
+        if (! $dateStr) {
+            return null;
+        }
+
+        try {
+            return new DateTimeImmutable($dateStr);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    protected function extractHelpfulCountFromNode(Crawler $helpfulNode): ?int
+    {
+        $text = $helpfulNode->attr('data-helpful-count') ?? $helpfulNode->text();
+        if (preg_match('/(\d+)/', $text, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 
     /**

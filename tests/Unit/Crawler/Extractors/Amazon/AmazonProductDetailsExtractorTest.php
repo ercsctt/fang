@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\Amazon\AmazonProductDetailsExtractor;
+use App\Services\ProductNormalizer;
 
 beforeEach(function () {
     $this->extractor = new AmazonProductDetailsExtractor;
@@ -89,7 +90,7 @@ describe('price extraction', function () {
 
 describe('weight parsing', function () {
     it('parses weight correctly', function (string $text, int $expectedGrams) {
-        expect($this->extractor->parseWeight($text))->toBe($expectedGrams);
+        expect(app(ProductNormalizer::class)->parseWeight($text))->toBe($expectedGrams);
     })->with([
         'kilograms' => ['2.5kg', 2500],
         'kilograms with space' => ['2.5 kg', 2500],
@@ -101,7 +102,7 @@ describe('weight parsing', function () {
     ]);
 
     test('returns null for text without weight', function () {
-        expect($this->extractor->parseWeight('Pedigree Adult Dog Food'))->toBeNull();
+        expect(app(ProductNormalizer::class)->parseWeight('Pedigree Adult Dog Food'))->toBeNull();
     });
 });
 

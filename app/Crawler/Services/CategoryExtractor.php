@@ -73,6 +73,21 @@ class CategoryExtractor
             return "{$animal}-{$type}";
         }
 
+        // Extract from /pets/.../dog-food or /pets/.../dog/food style paths
+        if (preg_match('/\/pets?\/(?:[^\/]+\/)*?(dog|puppy|cat|kitten)[-\/](food|treats)(?:\/|$|\?)/i', $url, $matches)) {
+            $animal = strtolower($matches[1]);
+            $type = strtolower($matches[2]);
+
+            if ($animal === 'puppy') {
+                $animal = 'dog';
+            }
+            if ($animal === 'kitten') {
+                $animal = 'cat';
+            }
+
+            return "{$animal}-{$type}";
+        }
+
         // Extract from general pet category paths
         // First check if it matches any config patterns (e.g., puppy-food -> dog-food)
         if (preg_match('/\/pets?\/([\w-]+)/i', $url, $matches)) {

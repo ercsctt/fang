@@ -20,7 +20,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'bm',
                 'base_url' => 'https://www.bmstores.co.uk',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\BMCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 1000,
             ],
             [
@@ -28,7 +27,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'pets-at-home',
                 'base_url' => 'https://www.petsathome.com',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\PetsAtHomeCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
             [
@@ -36,7 +34,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'tesco',
                 'base_url' => 'https://www.tesco.com',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\TescoCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
             [
@@ -44,7 +41,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'asda',
                 'base_url' => 'https://groceries.asda.com',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\AsdaCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
             [
@@ -52,7 +48,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'amazon-uk',
                 'base_url' => 'https://www.amazon.co.uk',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\AmazonCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 3000,
             ],
             [
@@ -60,7 +55,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'sainsburys',
                 'base_url' => 'https://www.sainsburys.co.uk',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\SainsburysCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
             [
@@ -68,7 +62,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'morrisons',
                 'base_url' => 'https://groceries.morrisons.com',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\MorrisonsCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
             [
@@ -76,7 +69,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'just-for-pets',
                 'base_url' => 'https://www.justforpetsonline.co.uk',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\JustForPetsCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 1500,
             ],
             [
@@ -84,7 +76,6 @@ class RetailerSeeder extends Seeder
                 'slug' => 'zooplus-uk',
                 'base_url' => 'https://www.zooplus.co.uk',
                 'crawler_class' => 'App\\Crawler\\Scrapers\\ZooplusCrawler',
-                'is_active' => true,
                 'rate_limit_ms' => 2000,
             ],
         ];

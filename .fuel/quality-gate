@@ -5,11 +5,14 @@ set -e
 # Runs formatters, linters, type-checkers, and tests for this project
 #
 # Usage:
-#   .fuel/quality-gate           # Run all checks including full test suite
+#   .fuel/quality-gate           # Run fast checks (default for fuel qc timeout)
 #   .fuel/quality-gate --fast    # Run only fast checks (for pre-commit)
+#   .fuel/quality-gate --full    # Run all checks including full test suite
 
-FAST_MODE=false
-if [ "$1" = "--fast" ]; then
+FAST_MODE=true
+if [ "$1" = "--full" ]; then
+    FAST_MODE=false
+elif [ "$1" = "--fast" ]; then
     FAST_MODE=true
 fi
 

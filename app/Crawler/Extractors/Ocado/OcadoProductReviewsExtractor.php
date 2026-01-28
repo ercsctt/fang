@@ -6,6 +6,7 @@ namespace App\Crawler\Extractors\Ocado;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductReview;
+use App\Crawler\Extractors\Concerns\SelectsElements;
 use Carbon\Carbon;
 use Generator;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,8 @@ use Symfony\Component\DomCrawler\Crawler;
 
 class OcadoProductReviewsExtractor implements ExtractorInterface
 {
+    use SelectsElements;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -44,24 +47,14 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
                 '[data-review-id]',
             ];
 
-            foreach ($reviewSelectors as $selector) {
-                try {
-                    $reviews = $crawler->filter($selector);
-                    if ($reviews->count() > 0) {
-                        foreach ($reviews as $reviewNode) {
-                            $review = $this->parseReview(new Crawler($reviewNode), $url, $reviewCount);
-                            if ($review !== null) {
-                                $reviewCount++;
-                                yield $review;
-                            }
-                        }
-
-                        if ($reviewCount > 0) {
-                            break;
-                        }
+            $reviews = $this->selectAll($crawler, $reviewSelectors, 'Reviews');
+            if ($reviews !== null) {
+                foreach ($reviews as $reviewNode) {
+                    $review = $this->parseReview(new Crawler($reviewNode), $url, $reviewCount);
+                    if ($review !== null) {
+                        $reviewCount++;
+                        yield $review;
                     }
-                } catch (\Exception $e) {
-                    Log::debug("OcadoProductReviewsExtractor: Review selector {$selector} failed: {$e->getMessage()}");
                 }
             }
         }
@@ -97,16 +90,18 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             return true;
         }
 
-        try {
-            $title = $crawler->filter('title');
-            if ($title->count() > 0) {
-                $titleText = strtolower($title->text());
-                if (str_contains($titleText, 'access denied') || str_contains($titleText, 'blocked')) {
-                    return true;
-                }
+        $titleNode = $this->selectFirst(
+            $crawler,
+            ['title'],
+            'Blocked page title',
+            fn (Crawler $node) => trim($node->text()) !== ''
+        );
+
+        if ($titleNode !== null) {
+            $titleText = strtolower($titleNode->text());
+            if (str_contains($titleText, 'access denied') || str_contains($titleText, 'blocked')) {
+                return true;
             }
-        } catch (\Exception $e) {
-            // Continue
         }
 
         return false;
@@ -119,33 +114,37 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
      */
     private function extractJsonLdReviews(Crawler $crawler): Generator
     {
-        try {
-            $scripts = $crawler->filter('script[type="application/ld+json"]');
+        $scripts = $this->selectAll(
+            $crawler,
+            ['script[type="application/ld+json"]'],
+            'JSON-LD reviews'
+        );
 
-            foreach ($scripts as $script) {
-                $content = $script->textContent;
-                $data = json_decode($content, true);
+        if ($scripts === null) {
+            return;
+        }
 
-                if ($data === null) {
-                    continue;
-                }
+        foreach ($scripts as $script) {
+            $content = $script->textContent;
+            $data = json_decode($content, true);
 
-                // Handle @graph format
-                if (isset($data['@graph'])) {
-                    foreach ($data['@graph'] as $item) {
-                        if (($item['@type'] ?? null) === 'Product') {
-                            yield from $this->parseJsonLdProductReviews($item);
-                        }
+            if ($data === null) {
+                continue;
+            }
+
+            // Handle @graph format
+            if (isset($data['@graph'])) {
+                foreach ($data['@graph'] as $item) {
+                    if (($item['@type'] ?? null) === 'Product') {
+                        yield from $this->parseJsonLdProductReviews($item);
                     }
                 }
-
-                // Direct Product type with reviews
-                if (($data['@type'] ?? null) === 'Product' && isset($data['review'])) {
-                    yield from $this->parseJsonLdProductReviews($data);
-                }
             }
-        } catch (\Exception $e) {
-            Log::debug("OcadoProductReviewsExtractor: Failed to extract JSON-LD reviews: {$e->getMessage()}");
+
+            // Direct Product type with reviews
+            if (($data['@type'] ?? null) === 'Product' && isset($data['review'])) {
+                yield from $this->parseJsonLdProductReviews($data);
+            }
         }
     }
 
@@ -324,41 +323,28 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             '.fop-rating',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    // Try data attribute first
-                    $dataRating = $element->first()->attr('data-rating');
-                    if ($dataRating !== null) {
-                        return (float) $dataRating;
-                    }
+        $ratingElement = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Rating',
+            fn (Crawler $node) => $this->extractRatingValueFromElement($node) !== null
+        );
 
-                    // Try aria-label
-                    $ariaLabel = $element->first()->attr('aria-label');
-                    if ($ariaLabel !== null && preg_match('/([\d.]+)\s*(?:out of\s*5|stars?)/i', $ariaLabel, $matches)) {
-                        return (float) $matches[1];
-                    }
-
-                    // Try text content
-                    $text = $element->first()->text();
-                    if (preg_match('/([\d.]+)\s*(?:out of\s*5|stars?|\/\s*5)/i', $text, $matches)) {
-                        return (float) $matches[1];
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
+        if ($ratingElement !== null) {
+            $value = $this->extractRatingValueFromElement($ratingElement);
+            if ($value !== null) {
+                return $value;
             }
         }
 
-        // Try counting star elements
-        try {
-            $filledStars = $reviewNode->filter('.star-filled, .star-full, [data-star="filled"]');
-            if ($filledStars->count() > 0) {
-                return (float) $filledStars->count();
-            }
-        } catch (\Exception $e) {
-            // Continue
+        $filledStars = $this->selectAll(
+            $reviewNode,
+            ['.star-filled, .star-full, [data-star="filled"]'],
+            'Rating'
+        );
+
+        if ($filledStars !== null) {
+            return (float) $filledStars->count();
         }
 
         return null;
@@ -379,21 +365,14 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             'p',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text) && strlen($text) > 10) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
+        $element = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Review body',
+            fn (Crawler $node) => strlen(trim($node->text())) > 10
+        );
 
-        return null;
+        return $element !== null ? trim($element->text()) : null;
     }
 
     /**
@@ -410,21 +389,14 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             'h4',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text)) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
+        $element = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Review title',
+            fn (Crawler $node) => trim($node->text()) !== ''
+        );
 
-        return null;
+        return $element !== null ? trim($element->text()) : null;
     }
 
     /**
@@ -440,21 +412,14 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             '.fop-review-author',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text)) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
+        $element = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Review author',
+            fn (Crawler $node) => trim($node->text()) !== ''
+        );
 
-        return null;
+        return $element !== null ? trim($element->text()) : null;
     }
 
     /**
@@ -469,45 +434,14 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             'time',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    // Try datetime attribute first
-                    $datetime = $element->first()->attr('datetime');
-                    if ($datetime !== null) {
-                        try {
-                            return Carbon::parse($datetime);
-                        } catch (\Exception $e) {
-                            // Continue
-                        }
-                    }
+        $element = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Review date',
+            fn (Crawler $node) => $this->parseReviewDateFromNode($node) !== null
+        );
 
-                    // Try text content
-                    $text = trim($element->first()->text());
-
-                    // Format: "15 January 2024" or "15/01/2024" or "Jan 15, 2024"
-                    if (preg_match('/(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4})/i', $text, $matches)) {
-                        try {
-                            return Carbon::parse($matches[1]);
-                        } catch (\Exception $e) {
-                            // Continue
-                        }
-                    }
-
-                    // Try direct parsing
-                    try {
-                        return Carbon::parse($text);
-                    } catch (\Exception $e) {
-                        // Continue
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        return null;
+        return $element !== null ? $this->parseReviewDateFromNode($element) : null;
     }
 
     /**
@@ -522,15 +456,8 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             '.fop-verified',
         ];
 
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    return true;
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
+        if ($this->selectFirst($reviewNode, $selectors, 'Verified purchase') !== null) {
+            return true;
         }
 
         // Check text content for verified indicators
@@ -558,30 +485,91 @@ class OcadoProductReviewsExtractor implements ExtractorInterface
             '.fop-helpful-count',
         ];
 
-        foreach ($selectors as $selector) {
+        $element = $this->selectFirst(
+            $reviewNode,
+            $selectors,
+            'Helpful count',
+            fn (Crawler $node) => $this->extractHelpfulCountFromNode($node) !== null
+        );
+
+        return $element !== null ? $this->extractHelpfulCountFromNode($element) : 0;
+    }
+
+    private function extractRatingValueFromElement(Crawler $ratingNode): ?float
+    {
+        $dataRating = $ratingNode->attr('data-rating');
+        if ($dataRating !== null && is_numeric($dataRating)) {
+            return (float) $dataRating;
+        }
+
+        $ariaLabel = $ratingNode->attr('aria-label');
+        if ($ariaLabel !== null && preg_match('/([\d.]+)\s*(?:out of\s*5|stars?)/i', $ariaLabel, $matches)) {
+            return (float) $matches[1];
+        }
+
+        return $this->extractRatingFromText($ratingNode->text());
+    }
+
+    private function extractRatingFromText(string $text): ?float
+    {
+        if (preg_match('/([\d.]+)\s*(?:out of\s*5|stars?|\/\s*5)/i', $text, $matches)) {
+            return (float) $matches[1];
+        }
+
+        if (preg_match('/^([\d.]+)$/', trim($text), $matches)) {
+            return (float) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function parseReviewDateFromNode(Crawler $dateNode): ?\DateTimeInterface
+    {
+        $datetime = $dateNode->attr('datetime');
+        if ($datetime !== null) {
             try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = strtolower($element->first()->text());
-
-                    // Format: "42 people found this helpful"
-                    if (preg_match('/(\d+)\s*(?:people|person)/i', $text, $matches)) {
-                        return (int) $matches[1];
-                    }
-                    if (str_contains($text, 'one person')) {
-                        return 1;
-                    }
-
-                    // Simple number
-                    if (preg_match('/^(\d+)$/', trim($element->first()->text()), $matches)) {
-                        return (int) $matches[1];
-                    }
-                }
+                return Carbon::parse($datetime);
             } catch (\Exception $e) {
-                // Continue
+                return null;
             }
         }
 
-        return 0;
+        $text = trim($dateNode->text());
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4})/i', $text, $matches)) {
+            try {
+                return Carbon::parse($matches[1]);
+            } catch (\Exception $e) {
+                return null;
+            }
+        }
+
+        try {
+            return Carbon::parse($text);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    private function extractHelpfulCountFromNode(Crawler $helpfulNode): ?int
+    {
+        $text = strtolower($helpfulNode->text());
+
+        if (preg_match('/(\d+)\s*(?:people|person)/i', $text, $matches)) {
+            return (int) $matches[1];
+        }
+
+        if (str_contains($text, 'one person')) {
+            return 1;
+        }
+
+        if (preg_match('/^(\d+)$/', trim($helpfulNode->text()), $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 }
