@@ -24,6 +24,7 @@ import {
     CheckCircle2,
     Clock,
     Database,
+    PauseCircle,
     RefreshCw,
     XCircle,
 } from 'lucide-vue-next';
@@ -38,10 +39,9 @@ interface RetailerHealth {
     id: number;
     name: string;
     slug: string;
-    is_active: boolean;
-    health_status: string;
-    health_status_label: string;
-    health_status_color: string;
+    status: 'active' | 'paused' | 'disabled' | 'degraded' | 'failed';
+    status_label: string;
+    status_color: string;
     consecutive_failures: number;
     last_failure_at: string | null;
     paused_until: string | null;
@@ -158,14 +158,22 @@ function refresh() {
     });
 }
 
+// Map new status enum to health categories for KPI display
+// 'active' -> healthy, 'paused' -> paused, 'degraded' -> degraded, 'disabled'/'failed' -> unhealthy
 const healthyCount = computed(
-    () => props.retailers.filter((r) => r.health_status === 'healthy').length,
+    () => props.retailers.filter((r) => r.status === 'active').length,
+);
+const pausedCount = computed(
+    () => props.retailers.filter((r) => r.status === 'paused').length,
 );
 const degradedCount = computed(
-    () => props.retailers.filter((r) => r.health_status === 'degraded').length,
+    () => props.retailers.filter((r) => r.status === 'degraded').length,
 );
 const unhealthyCount = computed(
-    () => props.retailers.filter((r) => r.health_status === 'unhealthy').length,
+    () =>
+        props.retailers.filter(
+            (r) => r.status === 'disabled' || r.status === 'failed',
+        ).length,
 );
 </script>
 
@@ -298,7 +306,7 @@ const unhealthyCount = computed(
                         <Clock class="size-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div class="flex items-center gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
                             <Badge
                                 v-if="healthyCount > 0"
                                 variant="outline"
@@ -306,6 +314,14 @@ const unhealthyCount = computed(
                             >
                                 <CheckCircle2 class="mr-1 size-3" />
                                 {{ healthyCount }}
+                            </Badge>
+                            <Badge
+                                v-if="pausedCount > 0"
+                                variant="outline"
+                                class="border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            >
+                                <PauseCircle class="mr-1 size-3" />
+                                {{ pausedCount }}
                             </Badge>
                             <Badge
                                 v-if="degradedCount > 0"

@@ -4,6 +4,7 @@ import {
     AlertTriangle,
     CheckCircle2,
     Clock,
+    MinusCircle,
     PauseCircle,
     XCircle,
 } from 'lucide-vue-next';
@@ -13,10 +14,9 @@ interface RetailerHealth {
     id: number;
     name: string;
     slug: string;
-    is_active: boolean;
-    health_status: string;
-    health_status_label: string;
-    health_status_color: string;
+    status: 'active' | 'paused' | 'disabled' | 'degraded' | 'failed';
+    status_label: string;
+    status_color: string;
     consecutive_failures: number;
     last_failure_at: string | null;
     paused_until: string | null;
@@ -34,15 +34,15 @@ const props = defineProps<Props>();
 
 const sortedRetailers = computed(() => {
     return [...props.retailers].sort((a, b) => {
+        // Sort by severity: failed/disabled first (need attention), then degraded, paused, active last
         const statusOrder: Record<string, number> = {
-            unhealthy: 0,
-            degraded: 1,
-            healthy: 2,
+            failed: 0,
+            disabled: 1,
+            degraded: 2,
+            paused: 3,
+            active: 4,
         };
-        return (
-            (statusOrder[a.health_status] ?? 3) -
-            (statusOrder[b.health_status] ?? 3)
-        );
+        return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
     });
 });
 
@@ -122,41 +122,42 @@ function getPausedUntilText(date: string | null): string {
                     class="group"
                 >
                     <td class="py-3">
-                        <div class="flex items-center gap-2">
-                            <span class="font-medium">{{ retailer.name }}</span>
-                            <Badge
-                                v-if="!retailer.is_active"
-                                variant="outline"
-                                class="text-xs"
-                            >
-                                Inactive
-                            </Badge>
-                        </div>
+                        <span class="font-medium">{{ retailer.name }}</span>
                     </td>
                     <td class="py-3">
                         <Badge
-                            :variant="'outline'"
+                            variant="outline"
                             :class="{
                                 'border-green-500 bg-green-500/10 text-green-600 dark:text-green-400':
-                                    retailer.health_status === 'healthy',
+                                    retailer.status === 'active',
                                 'border-yellow-500 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400':
-                                    retailer.health_status === 'degraded',
+                                    retailer.status === 'paused',
+                                'border-orange-500 bg-orange-500/10 text-orange-600 dark:text-orange-400':
+                                    retailer.status === 'degraded',
+                                'border-gray-500 bg-gray-500/10 text-gray-600 dark:text-gray-400':
+                                    retailer.status === 'disabled',
                                 'border-red-500 bg-red-500/10 text-red-600 dark:text-red-400':
-                                    retailer.health_status === 'unhealthy',
+                                    retailer.status === 'failed',
                             }"
                         >
                             <CheckCircle2
-                                v-if="retailer.health_status === 'healthy'"
+                                v-if="retailer.status === 'active'"
+                                class="mr-1 size-3"
+                            />
+                            <PauseCircle
+                                v-else-if="retailer.status === 'paused'"
                                 class="mr-1 size-3"
                             />
                             <AlertTriangle
-                                v-else-if="
-                                    retailer.health_status === 'degraded'
-                                "
+                                v-else-if="retailer.status === 'degraded'"
+                                class="mr-1 size-3"
+                            />
+                            <MinusCircle
+                                v-else-if="retailer.status === 'disabled'"
                                 class="mr-1 size-3"
                             />
                             <XCircle v-else class="mr-1 size-3" />
-                            {{ retailer.health_status_label }}
+                            {{ retailer.status_label }}
                         </Badge>
                     </td>
                     <td class="py-3">
