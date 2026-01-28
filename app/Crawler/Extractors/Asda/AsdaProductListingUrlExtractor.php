@@ -4,63 +4,13 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Asda;
 
-use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 use Generator;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
-class AsdaProductListingUrlExtractor implements ExtractorInterface
+class AsdaProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Asda product URLs contain /product/ followed by product identifier
-        // Format: /product/[product-name]/[SKU-ID] or /product/[SKU-ID]
-        $productLinks = $this->extractProductLinks($crawler);
-
-        $processedIds = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $productId = $this->extractProductId($link);
-            if ($productId === null) {
-                continue;
-            }
-
-            // Skip duplicates
-            if (in_array($productId, $processedIds)) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeProductUrl($link);
-
-            $processedIds[] = $productId;
-
-            Log::debug("AsdaProductListingUrlExtractor: Found product ID: {$productId}");
-
-            yield new ProductListingUrl(
-                url: $normalizedUrl,
-                retailer: 'asda',
-                category: $this->extractCategory($url),
-                metadata: [
-                    'product_id' => $productId,
-                    'discovered_from' => $url,
-                    'discovered_at' => now()->toIso8601String(),
-                ]
-            );
-        }
-
-        Log::info('AsdaProductListingUrlExtractor: Extracted '.count($processedIds)." product URLs from {$url}");
-    }
-
     public function canHandle(string $url): bool
     {
         // Handle Asda Groceries category/aisle pages but not individual product pages
@@ -86,17 +36,9 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
         return false;
     }
 
-    /**
-     * Extract product links from the page.
-     *
-     * @return array<string>
-     */
-    private function extractProductLinks(Crawler $crawler): array
+    protected function getProductLinkSelectors(): array
     {
-        $links = [];
-
-        // Common selectors for Asda product links
-        $selectors = [
+        return [
             'a[href*="/product/"]',
             '[data-auto-id="linkProductDetail"]',
             '.co-product__anchor',
@@ -104,6 +46,95 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
             '.product-card a[href*="/product/"]',
             '.listing-item a[href*="/product/"]',
         ];
+    }
+
+    protected function isProductUrl(string $url): bool
+    {
+        // Asda product URLs: /product/[product-name]/[SKU-ID] or /product/[SKU-ID]
+        return $this->extractProductId($url) !== null;
+    }
+
+    protected function getRetailerSlug(): string
+    {
+        return 'asda';
+    }
+
+    /**
+     * Override to use product ID-based deduplication and include script extraction.
+     */
+    public function extract(string $html, string $url): Generator
+    {
+        $crawler = new Crawler($html);
+
+        if (! $this->shouldExtract($crawler, $html, $url)) {
+            return;
+        }
+
+        // Get links from HTML and inline JSON
+        $productLinks = $this->extractAllProductLinks($crawler);
+        $processedIds = [];
+
+        foreach ($productLinks as $link) {
+            if (! $link) {
+                continue;
+            }
+
+            $productId = $this->extractProductId($link);
+            if ($productId === null) {
+                continue;
+            }
+
+            // Skip duplicates (product ID-based deduplication)
+            if (in_array($productId, $processedIds)) {
+                continue;
+            }
+
+            $normalizedUrl = $this->normalizeAsdaProductUrl($link);
+
+            $processedIds[] = $productId;
+
+            $this->logDebug("Found product ID: {$productId}");
+
+            yield new ProductListingUrl(
+                url: $normalizedUrl,
+                retailer: $this->getRetailerSlug(),
+                category: $this->extractCategoryForProduct($normalizedUrl, $url),
+                metadata: [
+                    'product_id' => $productId,
+                    'discovered_from' => $url,
+                    'discovered_at' => now()->toIso8601String(),
+                ],
+            );
+        }
+
+        $this->logInfo('Extracted '.count($processedIds)." product URLs from {$url}");
+    }
+
+    /**
+     * Extract all product links including from inline JSON in scripts.
+     *
+     * @return array<string>
+     */
+    private function extractAllProductLinks(Crawler $crawler): array
+    {
+        // Start with standard link extraction
+        $links = $this->extractProductLinksWithFilter($crawler);
+
+        // Also extract from JSON data embedded in scripts (Asda uses dynamic loading)
+        $this->extractLinksFromScripts($crawler, $links);
+
+        return $links;
+    }
+
+    /**
+     * Extract product links from HTML using selectors, filtering for /product/.
+     *
+     * @return array<string>
+     */
+    private function extractProductLinksWithFilter(Crawler $crawler): array
+    {
+        $links = [];
+        $selectors = $this->getProductLinkSelectors();
 
         foreach ($selectors as $selector) {
             try {
@@ -117,11 +148,20 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
                     });
                 }
             } catch (\Exception $e) {
-                Log::debug("AsdaProductListingUrlExtractor: Selector {$selector} failed: {$e->getMessage()}");
+                $this->logDebug("Selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
-        // Also try to extract from JSON data embedded in scripts (Asda uses dynamic loading)
+        return $links;
+    }
+
+    /**
+     * Extract product links from inline JSON in script tags.
+     *
+     * @param  array<string>  $links
+     */
+    private function extractLinksFromScripts(Crawler $crawler, array &$links): void
+    {
         try {
             $scripts = $crawler->filter('script');
             foreach ($scripts as $script) {
@@ -151,10 +191,8 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
                 }
             }
         } catch (\Exception $e) {
-            Log::debug("AsdaProductListingUrlExtractor: Script extraction failed: {$e->getMessage()}");
+            $this->logDebug("Script extraction failed: {$e->getMessage()}");
         }
-
-        return $links;
     }
 
     /**
@@ -178,9 +216,9 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
     }
 
     /**
-     * Normalize product URL to canonical form.
+     * Normalize Asda product URL to canonical form.
      */
-    private function normalizeProductUrl(string $url): string
+    private function normalizeAsdaProductUrl(string $url): string
     {
         $normalizedUrl = $this->normalizeUrl($url, 'https://groceries.asda.com/');
 
@@ -188,40 +226,5 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
         $cleanUrl = preg_replace('/[?#].*$/', '', $normalizedUrl);
 
         return $cleanUrl ?? $normalizedUrl;
-    }
-
-    /**
-     * Extract category from the source URL.
-     */
-    private function extractCategory(string $url): ?string
-    {
-        // Extract from aisle path: /aisle/pet-shop/dog/dog-food/
-        if (preg_match('/\/aisle\/([^\/]+(?:\/[^\/]+)*)(?:\/|$|\?)/i', $url, $matches)) {
-            $path = $matches[1];
-            $parts = explode('/', $path);
-
-            // Return the most specific category (last meaningful part)
-            $filteredParts = array_filter($parts, fn ($part) => ! empty($part) && $part !== 'all');
-            if (! empty($filteredParts)) {
-                return str_replace('-', ' ', end($filteredParts));
-            }
-        }
-
-        // Extract from shelf path
-        if (preg_match('/\/shelf\/([^\/]+)/i', $url, $matches)) {
-            return str_replace('-', ' ', $matches[1]);
-        }
-
-        // Extract from super-department path
-        if (preg_match('/\/super-department\/([^\/]+)/i', $url, $matches)) {
-            return str_replace('-', ' ', $matches[1]);
-        }
-
-        // Extract from search query
-        if (preg_match('/\/search\/([^\/\?]+)/i', $url, $matches)) {
-            return urldecode($matches[1]);
-        }
-
-        return null;
     }
 }

@@ -4,101 +4,33 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Sainsburys;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\ExtractsPagination;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 use Generator;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
-class SainsburysProductListingUrlExtractor implements ExtractorInterface
+class SainsburysProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use ExtractsPagination;
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Sainsbury's uses /gol-ui/product/ for product URLs
-        $productLinks = $crawler->filter('a[href*="/product/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedUrls = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeUrl($link, $url);
-
-            if (in_array($normalizedUrl, $processedUrls)) {
-                continue;
-            }
-
-            if ($this->isProductUrl($normalizedUrl)) {
-                $processedUrls[] = $normalizedUrl;
-
-                Log::debug("SainsburysProductListingUrlExtractor: Found product URL: {$normalizedUrl}");
-
-                yield new ProductListingUrl(
-                    url: $normalizedUrl,
-                    retailer: 'sainsburys',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                    ]
-                );
-            }
-        }
-
-        // Also try to extract product IDs from inline JSON data (Sainsbury's uses JavaScript rendering)
-        $jsonProductUrls = $this->extractFromInlineJson($html, $url);
-        foreach ($jsonProductUrls as $productUrl) {
-            if (! in_array($productUrl, $processedUrls)) {
-                $processedUrls[] = $productUrl;
-
-                Log::debug("SainsburysProductListingUrlExtractor: Found product URL from JSON: {$productUrl}");
-
-                yield new ProductListingUrl(
-                    url: $productUrl,
-                    retailer: 'sainsburys',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                        'source' => 'inline-json',
-                    ]
-                );
-            }
-        }
-
-        Log::info('SainsburysProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
-
-        // Extract next page URL if available
-        $nextPageUrl = $this->findNextPageLink($crawler, $url);
-        if ($nextPageUrl !== null) {
-            $currentPage = $this->extractCurrentPageNumber($url);
-            yield new PaginatedUrl(
-                url: $nextPageUrl,
-                retailer: 'sainsburys',
-                page: $currentPage + 1,
-                category: $this->extractCategory($url),
-                discoveredFrom: $url,
-            );
-        }
-    }
+    /**
+     * Track processed URLs across all extraction methods.
+     *
+     * @var array<string>
+     */
+    private array $allProcessedUrls = [];
 
     public function canHandle(string $url): bool
     {
         return str_contains($url, 'sainsburys.co.uk');
     }
 
-    private function isProductUrl(string $url): bool
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/product/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
     {
         // Sainsbury's product URLs have various patterns:
         // /gol-ui/product/[product-name]--[product-code]
@@ -124,22 +56,81 @@ class SainsburysProductListingUrlExtractor implements ExtractorInterface
         return false;
     }
 
+    protected function getRetailerSlug(): string
+    {
+        return 'sainsburys';
+    }
+
+    protected function supportsPagination(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Override to add inline JSON extraction after standard extraction.
+     */
+    public function extract(string $html, string $url): Generator
+    {
+        // Reset tracking for this extraction
+        $this->allProcessedUrls = [];
+
+        $crawler = new Crawler($html);
+
+        if (! $this->shouldExtract($crawler, $html, $url)) {
+            return;
+        }
+
+        // Standard product link extraction
+        $productLinks = $this->extractProductLinks($crawler);
+
+        foreach ($productLinks as $link) {
+            if (! $link) {
+                continue;
+            }
+
+            $normalizedUrl = $this->normalizeProductUrl($link, $url);
+
+            if (in_array($normalizedUrl, $this->allProcessedUrls)) {
+                continue;
+            }
+
+            if ($this->isProductUrl($normalizedUrl)) {
+                $this->allProcessedUrls[] = $normalizedUrl;
+
+                $this->logDebug("Found product URL: {$normalizedUrl}");
+
+                yield new ProductListingUrl(
+                    url: $normalizedUrl,
+                    retailer: $this->getRetailerSlug(),
+                    category: $this->extractCategoryForProduct($normalizedUrl, $url),
+                    metadata: $this->buildMetadata($link, $url),
+                );
+            }
+        }
+
+        // Also try to extract product IDs from inline JSON data (Sainsbury's uses JavaScript rendering)
+        yield from $this->extractFromInlineJson($html, $url);
+
+        $this->logInfo('Extracted '.count($this->allProcessedUrls)." product listing URLs from {$url}");
+
+        // Extract pagination
+        if ($this->supportsPagination()) {
+            yield from $this->extractPagination($crawler, $url);
+        }
+    }
+
     /**
      * Extract product URLs from inline JavaScript/JSON data.
-     *
-     * @return array<string>
      */
-    private function extractFromInlineJson(string $html, string $baseUrl): array
+    private function extractFromInlineJson(string $html, string $baseUrl): Generator
     {
-        $urls = [];
-
         // Look for product IDs in JSON data structures
         // Sainsbury's often embeds product data in script tags
         if (preg_match_all('/"product_uid"\s*:\s*"(\d+)"/', $html, $matches)) {
             foreach ($matches[1] as $productId) {
                 // We don't have the full URL slug, but we can note the product ID
                 // These would need to be resolved separately
-                Log::debug("SainsburysProductListingUrlExtractor: Found product UID in JSON: {$productId}");
+                $this->logDebug("Found product UID in JSON: {$productId}");
             }
         }
 
@@ -148,7 +139,23 @@ class SainsburysProductListingUrlExtractor implements ExtractorInterface
             foreach ($matches[1] as $productPath) {
                 $productPath = stripslashes($productPath);
                 if ($this->isProductUrl($productPath)) {
-                    $urls[] = $this->normalizeUrl($productPath, $baseUrl);
+                    $productUrl = $this->normalizeUrl($productPath, $baseUrl);
+
+                    if (! in_array($productUrl, $this->allProcessedUrls)) {
+                        $this->allProcessedUrls[] = $productUrl;
+
+                        $this->logDebug("Found product URL from JSON: {$productUrl}");
+
+                        yield new ProductListingUrl(
+                            url: $productUrl,
+                            retailer: $this->getRetailerSlug(),
+                            category: $this->extractCategoryForProduct($productUrl, $baseUrl),
+                            metadata: array_merge(
+                                $this->buildMetadata($productPath, $baseUrl),
+                                ['source' => 'inline-json']
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -157,17 +164,35 @@ class SainsburysProductListingUrlExtractor implements ExtractorInterface
         if (preg_match_all('/data-product-url="([^"]+)"/', $html, $matches)) {
             foreach ($matches[1] as $productPath) {
                 if ($this->isProductUrl($productPath)) {
-                    $urls[] = $this->normalizeUrl($productPath, $baseUrl);
+                    $productUrl = $this->normalizeUrl($productPath, $baseUrl);
+
+                    if (! in_array($productUrl, $this->allProcessedUrls)) {
+                        $this->allProcessedUrls[] = $productUrl;
+
+                        $this->logDebug("Found product URL from data attribute: {$productUrl}");
+
+                        yield new ProductListingUrl(
+                            url: $productUrl,
+                            retailer: $this->getRetailerSlug(),
+                            category: $this->extractCategoryForProduct($productUrl, $baseUrl),
+                            metadata: array_merge(
+                                $this->buildMetadata($productPath, $baseUrl),
+                                ['source' => 'data-attribute']
+                            ),
+                        );
+                    }
                 }
             }
         }
-
-        return array_unique($urls);
     }
 
-    private function extractCategory(string $url): ?string
+    /**
+     * Extract category from the source URL path.
+     * Sainsburys uses its own category extraction patterns specific to their URL structure.
+     */
+    protected function extractCategory(string $url): ?string
     {
-        // Extract category from the source URL path
+        // Extract category from the source URL path - Sainsburys-specific patterns first
         // e.g., /shop/gb/groceries/pets/dog-food-and-treats -> "dog-food-and-treats"
         if (preg_match('/\/pets?\/([\w-]+)/', $url, $matches)) {
             return $matches[1];
@@ -181,12 +206,13 @@ class SainsburysProductListingUrlExtractor implements ExtractorInterface
         // Broader pet category extraction
         if (preg_match('/\/(dog|cat|puppy|kitten)[-\/]?(food|treats)?/i', $url, $matches)) {
             $animal = strtolower($matches[1]);
-            $type = isset($matches[2]) ? strtolower($matches[2]) : null;
+            $type = isset($matches[2]) && $matches[2] !== '' ? strtolower($matches[2]) : null;
 
             return $type ? "{$animal}-{$type}" : $animal;
         }
 
-        return null;
+        // Fall back to CategoryExtractor
+        return parent::extractCategory($url);
     }
 
     /**
@@ -216,13 +242,5 @@ class SainsburysProductListingUrlExtractor implements ExtractorInterface
         }
 
         return null;
-    }
-
-    /**
-     * Normalize a pagination URL (required by ExtractsPagination trait).
-     */
-    protected function normalizePageUrl(string $href, string $baseUrl): string
-    {
-        return $this->normalizeUrl($href, $baseUrl);
     }
 }

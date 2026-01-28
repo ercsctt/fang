@@ -614,3 +614,110 @@ $category = $categoryExtractor->extractFromBreadcrumbs(
 - Refactor ProductDetailsExtractor classes to use CategoryExtractor::extractFromBreadcrumbs() instead of local extractCategory() methods
 - Add more retailer-specific URL patterns to config as needed
 - Consider extracting brand detection logic into a similar service
+
+### ✅ BaseProductListingUrlExtractor (Task f-f00c81)
+**Completed**: Created `app/Crawler/Extractors/BaseProductListingUrlExtractor.php` abstract class to consolidate duplicate extraction logic from all 11 ProductListingUrlExtractor classes.
+
+**Files Created**:
+- `app/Crawler/Extractors/BaseProductListingUrlExtractor.php` - Base abstract class (~230 lines) with:
+  - Uses `ExtractsPagination` and `NormalizesUrls` traits
+  - Constructor injection for optional `CategoryExtractor`
+  - Complete `extract()` method implementing the shared extraction loop with deduplication
+  - Logging helpers: `logDebug()`, `logInfo()`, `logWarning()`
+  - Pagination support via `supportsPagination()` and `extractPagination()`
+  - Category extraction delegation via `extractCategoryForProduct()` and `extractCategory()`
+  - Hook methods for pre-extraction checks: `shouldExtract()`
+
+**Abstract Methods (must implement)**:
+- `canHandle(string $url): bool` - Check if extractor handles given URL
+- `getProductLinkSelectors(): array` - CSS selectors for finding product links
+- `isProductUrl(string $url): bool` - Validate if URL is a product URL
+- `getRetailerSlug(): string` - Return retailer identifier for DTOs
+
+**Override Methods (optional)**:
+- `supportsPagination(): bool` - Return true if extractor supports pagination (default: false)
+- `shouldExtract(Crawler $crawler, string $html, string $url): bool` - Pre-extraction check (e.g., blocked page detection)
+- `extractProductLinks(Crawler $crawler): array` - Custom link extraction logic
+- `normalizeProductUrl(string $link, string $baseUrl): string` - Custom URL normalization
+- `extractCategoryForProduct(string $productUrl, string $sourceUrl): ?string` - Custom category source (default: sourceUrl)
+- `extractCategory(string $url): ?string` - Custom category extraction logic
+- `buildMetadata(string $originalLink, string $sourceUrl): array` - Custom metadata
+- `extractPageNumber(string $nextPageUrl, string $currentUrl): int` - Custom page number extraction
+
+**Extractors Refactored** (11 total):
+1. **Amazon** - Extends base, overrides extract() for ASIN-based deduplication, custom pagination selectors
+2. **Asda** - Extends base, overrides extract() for product ID-based deduplication with script extraction
+3. **BM** - Extends base, overrides extractCategoryForProduct() to use product URL instead of source URL
+4. **JustForPets** - Extends base, enables pagination, custom extractCategory()
+5. **Morrisons** - Extends base, custom extractCategory()
+6. **Ocado** - Extends base, enables pagination, overrides shouldExtract() for blocked page detection
+7. **PetsAtHome** - Extends base, enables pagination, custom extractCategory()
+8. **Sainsburys** - Extends base, overrides extract() for inline JSON extraction, enables pagination
+9. **Tesco** - Extends base, custom extractCategory()
+10. **Waitrose** - Extends base, enables pagination, custom extractCategory()
+11. **Zooplus** - Extends base, custom extractCategory()
+
+**Key Decisions**:
+- Used abstract class with traits (not a trait alone) because extractors need shared method implementations
+- Generator key collision fix: `extractPagination()` uses string key `'pagination'` to avoid collision with integer product keys when using `yield from`
+- Category extraction uses `extractCategoryForProduct()` hook to allow extractors like BM to use product URL instead of source URL
+- Each extractor keeps its retailer-specific category extraction patterns but tries them BEFORE falling back to CategoryExtractor (preserves original behavior)
+- Extractors that override `extract()` (Amazon, Asda, Sainsburys) still benefit from base class methods like logging, pagination, and category extraction
+
+**Pattern to Follow**:
+```php
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
+
+class NewRetailerProductListingUrlExtractor extends BaseProductListingUrlExtractor
+{
+    public function canHandle(string $url): bool
+    {
+        return str_contains($url, 'newretailer.com');
+    }
+
+    protected function getProductLinkSelectors(): array
+    {
+        return ['a[href*="/product/"]'];
+    }
+
+    protected function isProductUrl(string $url): bool
+    {
+        return (bool) preg_match('/\/product\/\d+/', $url);
+    }
+
+    protected function getRetailerSlug(): string
+    {
+        return 'newretailer';
+    }
+
+    // Optional: Enable pagination
+    protected function supportsPagination(): bool
+    {
+        return true;
+    }
+
+    // Optional: Custom category extraction (run BEFORE parent::extractCategory)
+    protected function extractCategory(string $url): ?string
+    {
+        // Try retailer-specific patterns first
+        if (preg_match('/\/category\/([\w-]+)/', $url, $matches)) {
+            return $matches[1];
+        }
+        // Fall back to CategoryExtractor
+        return parent::extractCategory($url);
+    }
+}
+```
+
+**Results**:
+- Reduced each extractor from ~100-180 lines to ~30-100 lines (avg ~60% reduction)
+- Consolidated ~600+ duplicate lines of extraction loop code
+- All 214 ProductListingUrlExtractor tests passing
+- Centralized logging, URL normalization, deduplication, and pagination handling
+- Easy to add new retailers by extending the base class
+
+**Gotchas**:
+- When using `yield from` for pagination, generator keys reset to 0, causing collision with product URL keys in `iterator_to_array()`. Fixed by using string key `'pagination'` in extractPagination().
+- Extractors with custom ID-based deduplication (Amazon/ASIN, Asda/productId) override `extract()` method entirely
+- Category extraction order matters: retailer-specific patterns should run BEFORE calling `parent::extractCategory()` to preserve original behavior
+- The `shouldExtract()` hook allows extractors like Ocado to detect blocked/CAPTCHA pages before extraction

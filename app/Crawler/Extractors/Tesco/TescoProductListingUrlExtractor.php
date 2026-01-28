@@ -4,72 +4,46 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Tesco;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
-use Generator;
-use Illuminate\Support\Facades\Log;
-use Symfony\Component\DomCrawler\Crawler;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 
-class TescoProductListingUrlExtractor implements ExtractorInterface
+class TescoProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Tesco uses /groceries/en-GB/products/ for product URLs
-        $productLinks = $crawler->filter('a[href*="/products/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedUrls = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeUrl($link, $url);
-
-            if (in_array($normalizedUrl, $processedUrls)) {
-                continue;
-            }
-
-            if ($this->isProductUrl($normalizedUrl)) {
-                $processedUrls[] = $normalizedUrl;
-
-                Log::debug("TescoProductListingUrlExtractor: Found product URL: {$normalizedUrl}");
-
-                yield new ProductListingUrl(
-                    url: $normalizedUrl,
-                    retailer: 'tesco',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                    ]
-                );
-            }
-        }
-
-        Log::info('TescoProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
-    }
-
     public function canHandle(string $url): bool
     {
         return str_contains($url, 'tesco.com');
     }
 
-    private function isProductUrl(string $url): bool
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/products/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
     {
         // Tesco product URLs: /groceries/en-GB/products/PRODUCTCODE
         // Product codes are numeric (TPNs - Tesco Product Numbers)
         return (bool) preg_match('/\/groceries\/en-GB\/products\/\d+/', $url);
     }
 
-    private function extractCategory(string $url): ?string
+    protected function getRetailerSlug(): string
     {
+        return 'tesco';
+    }
+
+    /**
+     * Extract category from the source URL.
+     * Tesco-specific extraction since CategoryExtractor may not handle Tesco URLs.
+     */
+    protected function extractCategory(string $url): ?string
+    {
+        // First try the injected CategoryExtractor
+        $category = parent::extractCategory($url);
+        if ($category !== null) {
+            return $category;
+        }
+
         // Extract category from the source URL path
         // e.g., /groceries/en-GB/shop/pets/dog-food-and-treats/ -> "dog-food-and-treats"
         if (preg_match('/\/shop\/pets?\/([\w-]+)/', $url, $matches)) {

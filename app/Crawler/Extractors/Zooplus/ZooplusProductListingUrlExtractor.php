@@ -4,59 +4,10 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Zooplus;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
-use Generator;
-use Illuminate\Support\Facades\Log;
-use Symfony\Component\DomCrawler\Crawler;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 
-class ZooplusProductListingUrlExtractor implements ExtractorInterface
+class ZooplusProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Zooplus uses various patterns for product URLs
-        // /shop/dogs/dry_dog_food/{product-slug}_{product-id}
-        $productLinks = $crawler->filter('a[href*="/shop/dogs/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedUrls = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeUrl($link, $url);
-
-            if (in_array($normalizedUrl, $processedUrls)) {
-                continue;
-            }
-
-            if ($this->isProductUrl($normalizedUrl)) {
-                $processedUrls[] = $normalizedUrl;
-
-                Log::debug("ZooplusProductListingUrlExtractor: Found product URL: {$normalizedUrl}");
-
-                yield new ProductListingUrl(
-                    url: $normalizedUrl,
-                    retailer: 'zooplus-uk',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                    ]
-                );
-            }
-        }
-
-        Log::info('ZooplusProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
-    }
-
     public function canHandle(string $url): bool
     {
         // Only handle category/listing pages, not product pages
@@ -64,7 +15,14 @@ class ZooplusProductListingUrlExtractor implements ExtractorInterface
             && ! $this->isProductUrl($url);
     }
 
-    private function isProductUrl(string $url): bool
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/shop/dogs/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
     {
         // Zooplus product URLs end with a numeric ID after an underscore
         // Example: /shop/dogs/dry_dog_food/brand/product-name_123456
@@ -72,8 +30,22 @@ class ZooplusProductListingUrlExtractor implements ExtractorInterface
         return (bool) preg_match('/\/shop\/dogs\/[a-z0-9_\/]+\/[a-z0-9-]+_(\d{4,})/i', $url);
     }
 
-    private function extractCategory(string $url): ?string
+    protected function getRetailerSlug(): string
     {
+        return 'zooplus-uk';
+    }
+
+    /**
+     * Extract category from the source URL path.
+     */
+    protected function extractCategory(string $url): ?string
+    {
+        // First try the injected CategoryExtractor
+        $category = parent::extractCategory($url);
+        if ($category !== null) {
+            return $category;
+        }
+
         // Extract category from the source URL path
         // e.g., /shop/dogs/dry_dog_food -> "dry_dog_food"
         if (preg_match('/\/shop\/dogs\/([\w_]+)/', $url, $matches)) {

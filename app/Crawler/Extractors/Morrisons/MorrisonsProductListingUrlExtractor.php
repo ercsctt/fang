@@ -4,71 +4,45 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Morrisons;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
-use Generator;
-use Illuminate\Support\Facades\Log;
-use Symfony\Component\DomCrawler\Crawler;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 
-class MorrisonsProductListingUrlExtractor implements ExtractorInterface
+class MorrisonsProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        $productLinks = $crawler->filter('a[href*="/products/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedUrls = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeUrl($link, $url);
-
-            if (in_array($normalizedUrl, $processedUrls)) {
-                continue;
-            }
-
-            if ($this->isProductUrl($normalizedUrl)) {
-                $processedUrls[] = $normalizedUrl;
-
-                Log::debug("MorrisonsProductListingUrlExtractor: Found product URL: {$normalizedUrl}");
-
-                yield new ProductListingUrl(
-                    url: $normalizedUrl,
-                    retailer: 'morrisons',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                    ]
-                );
-            }
-        }
-
-        Log::info('MorrisonsProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
-    }
-
     public function canHandle(string $url): bool
     {
         return str_contains($url, 'morrisons.com') && ! $this->isProductUrl($url);
     }
 
-    private function isProductUrl(string $url): bool
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/products/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
     {
         // Morrisons product URLs: /products/[product-slug]/[SKU]
         // SKUs are numeric or alphanumeric identifiers
         return (bool) preg_match('/\/products\/[\w-]+\/\w+/', $url);
     }
 
-    private function extractCategory(string $url): ?string
+    protected function getRetailerSlug(): string
     {
+        return 'morrisons';
+    }
+
+    /**
+     * Extract category from the source URL path.
+     */
+    protected function extractCategory(string $url): ?string
+    {
+        // First try the injected CategoryExtractor
+        $category = parent::extractCategory($url);
+        if ($category !== null) {
+            return $category;
+        }
+
         // Extract category from the source URL path
         // e.g., /browse/pet/dog -> "dog"
         if (preg_match('/\/browse\/pet\/([\w-]+)/', $url, $matches)) {

@@ -4,82 +4,11 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Ocado;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\PaginatedUrl;
-use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\ExtractsPagination;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
-use Generator;
-use Illuminate\Support\Facades\Log;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
 use Symfony\Component\DomCrawler\Crawler;
 
-class OcadoProductListingUrlExtractor implements ExtractorInterface
+class OcadoProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use ExtractsPagination;
-    use NormalizesUrls;
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Check for blocked/captcha page
-        if ($this->isBlockedPage($crawler, $html)) {
-            Log::warning("OcadoProductListingUrlExtractor: Blocked/CAPTCHA page detected at {$url}");
-
-            return;
-        }
-
-        // Ocado product URLs typically have format: /products/{product-slug}-{sku}
-        // or /productCard/{sku}/{slug}
-        $productLinks = $crawler->filter('a[href*="/products/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedUrls = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $normalizedUrl = $this->normalizeUrl($link, $url);
-
-            if (in_array($normalizedUrl, $processedUrls)) {
-                continue;
-            }
-
-            if ($this->isProductUrl($normalizedUrl)) {
-                $processedUrls[] = $normalizedUrl;
-
-                Log::debug("OcadoProductListingUrlExtractor: Found product URL: {$normalizedUrl}");
-
-                yield new ProductListingUrl(
-                    url: $normalizedUrl,
-                    retailer: 'ocado',
-                    category: $this->extractCategory($url),
-                    metadata: [
-                        'discovered_from' => $url,
-                        'discovered_at' => now()->toIso8601String(),
-                    ]
-                );
-            }
-        }
-
-        Log::info('OcadoProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
-
-        // Extract next page URL if available
-        $nextPageUrl = $this->findNextPageLink($crawler, $url);
-        if ($nextPageUrl !== null) {
-            $currentPage = $this->extractCurrentPageNumber($url);
-            yield new PaginatedUrl(
-                url: $nextPageUrl,
-                retailer: 'ocado',
-                page: $currentPage + 1,
-                category: $this->extractCategory($url),
-                discoveredFrom: $url,
-            );
-        }
-    }
-
     public function canHandle(string $url): bool
     {
         // Handle category/browse pages, not product pages
@@ -89,6 +18,45 @@ class OcadoProductListingUrlExtractor implements ExtractorInterface
 
         // Category pages use /browse/ or /search/ patterns
         return str_contains($url, '/browse/') || str_contains($url, '/search/');
+    }
+
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/products/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
+    {
+        // Ocado product URLs: /products/{product-name-slug}-{sku}
+        // SKU is typically a numeric ID at the end
+        // Example: /products/royal-canin-mini-adult-dog-food-2kg-567890
+        return (bool) preg_match('/\/products\/[a-z0-9-]+-\d+$/i', $url);
+    }
+
+    protected function getRetailerSlug(): string
+    {
+        return 'ocado';
+    }
+
+    protected function supportsPagination(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Check if the page is blocked or shows a CAPTCHA.
+     */
+    protected function shouldExtract(Crawler $crawler, string $html, string $url): bool
+    {
+        if ($this->isBlockedPage($crawler, $html)) {
+            $this->logWarning("Blocked/CAPTCHA page detected at {$url}");
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -115,33 +83,6 @@ class OcadoProductListingUrlExtractor implements ExtractorInterface
         return false;
     }
 
-    private function isProductUrl(string $url): bool
-    {
-        // Ocado product URLs: /products/{product-name-slug}-{sku}
-        // SKU is typically a numeric ID at the end
-        // Example: /products/royal-canin-mini-adult-dog-food-2kg-567890
-        return (bool) preg_match('/\/products\/[a-z0-9-]+-\d+$/i', $url);
-    }
-
-    private function extractCategory(string $url): ?string
-    {
-        // Extract category from Ocado browse URL path
-        // Example: /browse/pets-20974/dog-111797/dog-food-111800
-        // We want to extract "dog-food"
-
-        // First, try to find the category just before the product SKU segment
-        if (preg_match('/\/(dog-food|dog-treats|puppy-food|puppy-treats|cat-food|cat-treats)(?:-\d+)?(?:\/|$)/i', $url, $matches)) {
-            return strtolower($matches[1]);
-        }
-
-        // Fall back to extracting from /dog/ or /cat/ segments
-        if (preg_match('/\/(dog|cat|puppy|kitten)(?:-\d+)?(?:\/|$)/i', $url, $matches)) {
-            return strtolower($matches[1]);
-        }
-
-        return null;
-    }
-
     /**
      * Override to extract page number from Ocado URL patterns.
      */
@@ -153,13 +94,5 @@ class OcadoProductListingUrlExtractor implements ExtractorInterface
         }
 
         return 1;
-    }
-
-    /**
-     * Normalize a pagination URL (required by ExtractsPagination trait).
-     */
-    protected function normalizePageUrl(string $href, string $baseUrl): string
-    {
-        return $this->normalizeUrl($href, $baseUrl);
     }
 }

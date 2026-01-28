@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Amazon;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\Concerns\ExtractsPagination;
-use App\Crawler\Extractors\Concerns\NormalizesUrls;
+use App\Crawler\Extractors\BaseProductListingUrlExtractor;
+use App\Crawler\Services\CategoryExtractor;
 use Generator;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
-class AmazonProductListingUrlExtractor implements ExtractorInterface
+class AmazonProductListingUrlExtractor extends BaseProductListingUrlExtractor
 {
-    use ExtractsPagination;
-    use NormalizesUrls;
+    public function __construct(
+        ?CategoryExtractor $categoryExtractor = null,
+    ) {
+        parent::__construct($categoryExtractor);
 
-    public function __construct()
-    {
         // Amazon-specific pagination selectors (override trait defaults)
         $this->nextPageSelectors = [
             'a.s-pagination-next',
@@ -29,70 +26,6 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
             '.a-pagination .a-last a',
             'a[rel="next"]',
         ];
-    }
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Amazon product URLs contain /dp/ASIN where ASIN is 10 characters
-        // Also handle /gp/product/ASIN and /gp/aw/d/ASIN (mobile) formats
-        $productLinks = $crawler->filter('a[href*="/dp/"], a[href*="/gp/product/"], a[href*="/gp/aw/d/"]')
-            ->each(fn (Crawler $node) => $node->attr('href'));
-
-        $processedAsins = [];
-
-        foreach ($productLinks as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $asin = $this->extractAsin($link);
-            if ($asin === null) {
-                continue;
-            }
-
-            // Skip duplicates
-            if (in_array($asin, $processedAsins)) {
-                continue;
-            }
-
-            // Skip sponsored products links that might have tracking params
-            // but keep the core product URL
-            $normalizedUrl = $this->normalizeProductUrl($asin);
-
-            $processedAsins[] = $asin;
-
-            Log::debug("AmazonProductListingUrlExtractor: Found product ASIN: {$asin}");
-
-            yield new ProductListingUrl(
-                url: $normalizedUrl,
-                retailer: 'amazon-uk',
-                category: $this->extractCategory($url),
-                metadata: [
-                    'asin' => $asin,
-                    'discovered_from' => $url,
-                    'discovered_at' => now()->toIso8601String(),
-                ]
-            );
-        }
-
-        Log::info('AmazonProductListingUrlExtractor: Extracted '.count($processedAsins)." product ASINs from {$url}");
-
-        // Extract pagination
-        $nextPageUrl = $this->findNextPageLink($crawler, $url);
-        if ($nextPageUrl !== null) {
-            $nextPage = $this->extractPageNumberFromUrl($nextPageUrl);
-            Log::debug("AmazonProductListingUrlExtractor: Found next page URL: {$nextPageUrl} (page {$nextPage})");
-
-            yield new PaginatedUrl(
-                url: $nextPageUrl,
-                retailer: 'amazon-uk',
-                page: $nextPage,
-                category: $this->extractCategory($url),
-                discoveredFrom: $url,
-            );
-        }
     }
 
     public function canHandle(string $url): bool
@@ -110,6 +43,88 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
         }
 
         return false;
+    }
+
+    protected function getProductLinkSelectors(): array
+    {
+        return [
+            'a[href*="/dp/"]',
+            'a[href*="/gp/product/"]',
+            'a[href*="/gp/aw/d/"]',
+        ];
+    }
+
+    protected function isProductUrl(string $url): bool
+    {
+        // Amazon product URLs contain /dp/ASIN, /gp/product/ASIN, or /gp/aw/d/ASIN
+        return $this->extractAsin($url) !== null;
+    }
+
+    protected function getRetailerSlug(): string
+    {
+        return 'amazon-uk';
+    }
+
+    protected function supportsPagination(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Override to use ASIN-based deduplication instead of URL-based.
+     * Amazon URLs can have many variations for the same product (tracking params, etc.).
+     */
+    public function extract(string $html, string $url): Generator
+    {
+        $crawler = new Crawler($html);
+
+        if (! $this->shouldExtract($crawler, $html, $url)) {
+            return;
+        }
+
+        $productLinks = $this->extractProductLinks($crawler);
+        $processedAsins = [];
+
+        foreach ($productLinks as $link) {
+            if (! $link) {
+                continue;
+            }
+
+            $asin = $this->extractAsin($link);
+            if ($asin === null) {
+                continue;
+            }
+
+            // Skip duplicates (ASIN-based deduplication)
+            if (in_array($asin, $processedAsins)) {
+                continue;
+            }
+
+            // Normalize to canonical product URL
+            $normalizedUrl = $this->normalizeAsinToUrl($asin);
+
+            $processedAsins[] = $asin;
+
+            $this->logDebug("Found product ASIN: {$asin}");
+
+            yield new ProductListingUrl(
+                url: $normalizedUrl,
+                retailer: $this->getRetailerSlug(),
+                category: $this->extractCategoryFromSourceUrl($url),
+                metadata: [
+                    'asin' => $asin,
+                    'discovered_from' => $url,
+                    'discovered_at' => now()->toIso8601String(),
+                ],
+            );
+        }
+
+        $this->logInfo('Extracted '.count($processedAsins)." product ASINs from {$url}");
+
+        // Extract pagination
+        if ($this->supportsPagination()) {
+            yield from $this->extractPagination($crawler, $url);
+        }
     }
 
     /**
@@ -138,18 +153,25 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
     }
 
     /**
-     * Normalize product URL to canonical form.
+     * Normalize ASIN to canonical product URL.
      */
-    private function normalizeProductUrl(string $asin): string
+    private function normalizeAsinToUrl(string $asin): string
     {
         return "https://www.amazon.co.uk/dp/{$asin}";
     }
 
     /**
      * Extract category from the source URL.
+     * Amazon has custom category extraction from search queries and browse nodes.
      */
-    private function extractCategory(string $url): ?string
+    private function extractCategoryFromSourceUrl(string $url): ?string
     {
+        // First try the injected CategoryExtractor
+        $category = parent::extractCategory($url);
+        if ($category !== null) {
+            return $category;
+        }
+
         // Extract from search query
         if (preg_match('/[?&]k=([^&]+)/i', $url, $matches)) {
             $query = urldecode($matches[1]);
@@ -179,19 +201,11 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
     }
 
     /**
-     * Normalize a pagination URL to absolute form.
-     */
-    protected function normalizePageUrl(string $href, string $baseUrl): string
-    {
-        return $this->normalizeUrl($href, $baseUrl);
-    }
-
-    /**
      * Extract page number from a pagination URL.
      */
-    private function extractPageNumberFromUrl(string $url): int
+    protected function extractPageNumber(string $nextPageUrl, string $currentUrl): int
     {
-        if (preg_match('/[?&]page=(\d+)/i', $url, $matches)) {
+        if (preg_match('/[?&]page=(\d+)/i', $nextPageUrl, $matches)) {
             return (int) $matches[1];
         }
 
