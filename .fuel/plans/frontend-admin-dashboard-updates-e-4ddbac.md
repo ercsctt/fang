@@ -50,5 +50,23 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Decision: Opted to remove the footer nav entirely rather than replace with project docs, as this is an internal admin tool
 - The `NavUser` component remains in the sidebar footer for user account access
 
+### Task f-8061bd: Add browser tests for Retailers admin
+- Created `tests/Browser/Admin/RetailersTest.php` with Pest v4 browser tests
+- Tests cover:
+  1. Index page loads with retailer list
+  2. Status filter dropdown functionality
+  3. Search functionality
+  4. Create retailer page loads with form
+  5. Retailer creation flow
+  6. Edit retailer page loads with pre-populated data
+  7. Retailer update flow
+  8. Pause/Resume status actions
+  9. Disable/Enable status actions
+  10. Test connection button behavior
+- Pattern: Created `loginAndVisit(User $user, string $url)` helper function to authenticate via browser login before visiting protected pages
+- Note: Browser tests require Playwright with system dependencies. Tests use real browser interaction via `visit()`, `click()`, `type()`, `waitFor()`, etc.
+- Updated `tests/Pest.php` to include Browser directory in test configuration
+- Status actions (pause/resume/disable/enable) are API routes requiring Sanctum auth, triggered via RetailerTable.vue's fetch calls
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

@@ -23,6 +23,11 @@ pest()->extend(Tests\TestCase::class)
     ->use(Tests\Traits\CanHandleTestCases::class)
     ->in('Unit');
 
+// Browser tests using Pest v4 browser testing
+pest()->extend(Tests\TestCase::class)
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Browser');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
