@@ -39,69 +39,17 @@ class AsdaProductDetailsExtractor implements ExtractorInterface
     ];
 
     /**
-     * Known pet food brands for extraction fallback.
+     * Get all known brands for Asda (core brands + Asda-specific brands).
      *
-     * @var array<string>
+     * @return array<string>
      */
-    private const KNOWN_BRANDS = [
-        'Pedigree',
-        'Whiskas',
-        'Felix',
-        'Iams',
-        'Royal Canin',
-        'Purina',
-        'Harringtons',
-        'Bakers',
-        'Burns',
-        'James Wellbeloved',
-        'Lily\'s Kitchen',
-        "Lily's Kitchen",
-        'Forthglade',
-        'Butcher\'s',
-        "Butcher's",
-        'Cesar',
-        'Webbox',
-        'Good Boy',
-        'Dreamies',
-        'Wagg',
-        'Naturo',
-        'AVA',
-        'Applaws',
-        'Canagan',
-        'Orijen',
-        'Acana',
-        'Hill\'s',
-        "Hill's",
-        'Hills',
-        'Eukanuba',
-        'ProPlan',
-        'Pro Plan',
-        'Arden Grange',
-        'Barking Heads',
-        'Canidae',
-        'Taste of the Wild',
-        'Wellness',
-        'Blue Buffalo',
-        'Natures Menu',
-        'Nature\'s Menu',
-        "Nature's Menu",
-        'Encore',
-        'Thrive',
-        'Scrumbles',
-        'Edgard & Cooper',
-        'Pooch & Mutt',
-        'ASDA',
-        'Extra Special',
-        'Smart Price',
-        'Winalot',
-        'Chappie',
-        'Adventuros',
-        'Dentalife',
-        'Dentastix',
-        'Frolic',
-        'Markus Muhle',
-        'Pero',
-    ];
+    private function getKnownBrands(): array
+    {
+        return array_merge(
+            config('brands.known_brands', []),
+            config('brands.retailer_specific.asda', [])
+        );
+    }
 
     public function extract(string $html, string $url): Generator
     {
@@ -595,7 +543,7 @@ class AsdaProductDetailsExtractor implements ExtractorInterface
      */
     private function extractBrandFromTitle(string $title): ?string
     {
-        foreach (self::KNOWN_BRANDS as $brand) {
+        foreach ($this->getKnownBrands() as $brand) {
             if (stripos($title, $brand) !== false) {
                 return $brand;
             }

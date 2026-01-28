@@ -28,83 +28,17 @@ class JFPProductDetailsExtractor implements ExtractorInterface
     ];
 
     /**
-     * Known pet food brands for extraction fallback.
+     * Get all known brands for JustForPets (core brands + retailer-specific brands).
      *
-     * @var array<string>
+     * @return array<string>
      */
-    private const KNOWN_BRANDS = [
-        'Pedigree',
-        'Whiskas',
-        'Felix',
-        'Iams',
-        'Royal Canin',
-        'Purina',
-        'Harringtons',
-        'Bakers',
-        'Burns',
-        'James Wellbeloved',
-        "Lily's Kitchen",
-        'Forthglade',
-        "Butcher's",
-        'Cesar',
-        'Webbox',
-        'Good Boy',
-        'Dreamies',
-        'Wagg',
-        'Naturo',
-        'AVA',
-        'Applaws',
-        'Canagan',
-        'Orijen',
-        'Acana',
-        "Hill's",
-        'Hills',
-        'Eukanuba',
-        'ProPlan',
-        'Pro Plan',
-        'Arden Grange',
-        'Barking Heads',
-        'Canidae',
-        'Taste of the Wild',
-        'Wellness',
-        'Blue Buffalo',
-        "Nature's Menu",
-        'Encore',
-        'Thrive',
-        'Scrumbles',
-        'Edgard & Cooper',
-        'Pooch & Mutt',
-        'Wainwrights',
-        "Wainwright's",
-        'Skinners',
-        'Chappie',
-        'Burgess',
-        'Tribal',
-        'Pero',
-        'Symply',
-        'Guru',
-        'Carnilove',
-        'Brit',
-        'Natures Deli',
-        'Country Hunter',
-        'Nutriment',
-        'Natural Instinct',
-        'Natures Variety',
-        'Canine Choice',
-        'Lovebites',
-        'Soopa',
-        'Denzel',
-        'Fish4Dogs',
-        'Akela',
-        'Eden',
-        'Wolfworthy',
-        'Millies Wolfheart',
-        'CSJ',
-        'Beta',
-        'Skinner\'s',
-        'Autarky',
-        'Pero Gold',
-    ];
+    private function getKnownBrands(): array
+    {
+        return array_merge(
+            config('brands.known_brands', []),
+            config('brands.retailer_specific.justforpets', [])
+        );
+    }
 
     public function extract(string $html, string $url): Generator
     {
@@ -531,7 +465,7 @@ class JFPProductDetailsExtractor implements ExtractorInterface
      */
     private function extractBrandFromTitle(string $title): ?string
     {
-        foreach (self::KNOWN_BRANDS as $brand) {
+        foreach ($this->getKnownBrands() as $brand) {
             if (stripos($title, $brand) !== false) {
                 return $brand;
             }
