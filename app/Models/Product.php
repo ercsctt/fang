@@ -9,11 +9,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Laravel\Scout\Searchable;
 
 class Product extends Model
 {
     /** @use HasFactory<\Database\Factories\ProductFactory> */
     use HasFactory;
+
+    use Searchable;
 
     /**
      * @var list<string>
@@ -96,5 +99,21 @@ class Product extends Model
         }
 
         return '£'.number_format($this->average_price_pence / 100, 2);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'brand' => $this->brand,
+            'description' => $this->description,
+            'category' => $this->category,
+            'canonical_category' => $this->canonical_category?->value,
+            'subcategory' => $this->subcategory,
+        ];
     }
 }

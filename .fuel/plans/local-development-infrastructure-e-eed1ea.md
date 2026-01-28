@@ -21,5 +21,17 @@ Set up local development infrastructure using Docker Compose with MySQL, Redis, 
 - Scout is not currently installed, so no SCOUT_DRIVER update needed
 - All docker service hosts already use 127.0.0.1 for local dev
 
+### f-993dc9: Configure Laravel Scout with Meilisearch
+- Installed `laravel/scout` v10.23 and `meilisearch/meilisearch-php` v1.16
+- Published Scout config to `config/scout.php`
+- Set default driver to `meilisearch` (reads from `SCOUT_DRIVER` env var)
+- Added `SCOUT_DRIVER=meilisearch` to `.env.example`
+- Added `Searchable` trait to `Product` and `ProductListing` models
+- Implemented `toSearchableArray()` on both models:
+  - Product: id, name, brand, description, category, canonical_category, subcategory
+  - ProductListing: id, title, description, brand, category, barcode, retailer_id
+- Added `SCOUT_DRIVER=collection` to `phpunit.xml` so tests don't require running Meilisearch instance
+- **Key decision**: Use `collection` driver in tests to avoid external service dependency
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

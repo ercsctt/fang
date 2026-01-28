@@ -11,11 +11,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Laravel\Scout\Searchable;
 
 class ProductListing extends Model
 {
     /** @use HasFactory<\Database\Factories\ProductListingFactory> */
     use HasFactory;
+
+    use Searchable;
 
     /**
      * @var list<string>
@@ -307,5 +310,21 @@ class ProductListing extends Model
                 'recorded_at' => now(),
             ]);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toSearchableArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'description' => $this->description,
+            'brand' => $this->brand,
+            'category' => $this->category,
+            'barcode' => $this->barcode,
+            'retailer_id' => $this->retailer_id,
+        ];
     }
 }
