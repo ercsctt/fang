@@ -62,7 +62,7 @@ Schedule::command('retailers:resume-expired')
 |
 */
 
-//Schedule::job(new \App\Jobs\CleanupOrphanedImagesJob(daysOld: 30))
+// Schedule::job(new \App\Jobs\CleanupOrphanedImagesJob(daysOld: 30))
 //    ->dailyAt('04:00')
 //    ->timezone('Europe/London')
 //    ->onOneServer()
