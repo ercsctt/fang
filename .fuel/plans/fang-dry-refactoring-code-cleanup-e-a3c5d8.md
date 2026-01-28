@@ -550,3 +550,67 @@ class NewRetailerProductReviewsExtractor extends BaseProductReviewsExtractor
 - Some extractors (Asda, Amazon) use Carbon for date parsing instead of DateTimeImmutable - these override extractDateFromDom()
 - The base class includes percentage-width style rating detection which covers WooCommerce patterns
 - Review ID generation uses retailer slug prefix: `{slug}-review-{hash}-{index}`
+
+### ✅ CategoryExtractor Service (Task f-62d4e9)
+**Completed**: Extracted duplicated extractCategory() methods into a shared CategoryExtractor service at app/Crawler/Services/CategoryExtractor.php.
+
+**Files Created**:
+- `app/Crawler/Services/CategoryExtractor.php` - Centralized category extraction service with:
+  - `extractFromUrl($url)` - Extract category from URL patterns (aisle, shelf, super-department, search, pets, gol-ui paths, and Ocado browse URLs)
+  - `extractFromBreadcrumbs($crawler, $selectors, $depthFromEnd)` - Extract category from DOM breadcrumb elements
+  - Supports configuration-based category patterns from `config/crawler.php`
+  - Handles generic term filtering to skip non-meaningful categories
+- `tests/Unit/Services/CategoryExtractorTest.php` - Comprehensive test suite (24 tests, all passing)
+
+**Configuration Updated**:
+- `config/crawler.php` - Added category detection configuration:
+  - `category_patterns` - Maps category names to regex patterns (dog-food, dog-treats, cat-food, cat-treats, dog, cat, pets)
+  - `category_filters` - Generic terms to exclude (home, groceries, shop, all, pets)
+
+**Key Decisions**:
+- Service uses dependency injection via constructor in BaseProductListingUrlExtractor
+- URL-based extraction prioritizes structured paths (aisle/shelf/super-department) over general config patterns
+- Special handling for `/dog/food/`, `/cat/treats/` style paths (converted to `dog-food`, `cat-treats`)
+- Config patterns match exact category strings to avoid false positives (e.g., "dog-food-and-treats" won't match "dog-food" pattern)
+- Breadcrumb extraction skips generic terms and falls back to last breadcrumb if desired depth is generic
+- Default breadcrumb selectors support Amazon, Asda, Tesco, Sainsburys, Ocado, PetsAtHome formats
+
+**Integration Points**:
+- `BaseProductListingUrlExtractor` - Uses CategoryExtractor via constructor injection, provides extractCategory() method that delegates to service
+- ProductDetailsExtractor classes (11 total) still have local extractCategory() methods that extract from breadcrumbs - these can be refactored in future to use CategoryExtractor::extractFromBreadcrumbs()
+
+**Pattern to Follow**:
+```php
+// In BaseProductListingUrlExtractor or similar:
+public function __construct(
+    protected readonly ?CategoryExtractor $categoryExtractor = null,
+) {}
+
+protected function extractCategory(string $url): ?string
+{
+    if ($this->categoryExtractor !== null) {
+        return $this->categoryExtractor->extractFromUrl($url);
+    }
+    return null;
+}
+
+// For breadcrumb extraction in ProductDetailsExtractors:
+$categoryExtractor = app(CategoryExtractor::class);
+$category = $categoryExtractor->extractFromBreadcrumbs(
+    $crawler,
+    ['#breadcrumbs a', '.breadcrumb a'],
+    depthFromEnd: 1
+);
+```
+
+**Results**:
+- Consolidated category extraction logic previously duplicated across 22+ extractor files
+- All 24 CategoryExtractor tests passing
+- BaseProductListingUrlExtractor uses the service by default
+- Easy to extend category patterns by updating config/crawler.php
+- Consistent category extraction behavior across all crawlers
+
+**Future Opportunities**:
+- Refactor ProductDetailsExtractor classes to use CategoryExtractor::extractFromBreadcrumbs() instead of local extractCategory() methods
+- Add more retailer-specific URL patterns to config as needed
+- Consider extracting brand detection logic into a similar service
