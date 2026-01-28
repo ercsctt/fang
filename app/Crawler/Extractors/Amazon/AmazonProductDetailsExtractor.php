@@ -7,6 +7,7 @@ namespace App\Crawler\Extractors\Amazon;
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
+use App\Services\ProductNormalizer;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
@@ -14,32 +15,6 @@ use Symfony\Component\DomCrawler\Crawler;
 class AmazonProductDetailsExtractor implements ExtractorInterface
 {
     use ExtractsJsonLd;
-
-    /**
-     * Weight conversion factors to grams.
-     */
-    private const WEIGHT_TO_GRAMS = [
-        'kg' => 1000,
-        'kilograms' => 1000,
-        'kilogram' => 1000,
-        'g' => 1,
-        'grams' => 1,
-        'gram' => 1,
-        'ml' => 1,
-        'millilitres' => 1,
-        'milliliters' => 1,
-        'l' => 1000,
-        'ltr' => 1000,
-        'litre' => 1000,
-        'litres' => 1000,
-        'liter' => 1000,
-        'liters' => 1000,
-        'lb' => 454,
-        'lbs' => 454,
-        'pounds' => 454,
-        'oz' => 28,
-        'ounces' => 28,
-    ];
 
     /**
      * Get all known brands for Amazon (core brands + Amazon-specific brands).
@@ -739,19 +714,7 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
      */
     public function parseWeight(string $text): ?int
     {
-        // Match patterns like "2.5kg", "400g", "500ml", "1l", "1.5 kg", "5 lb"
-        $pattern = '/(\d+(?:[.,]\d+)?)\s*(kg|kilograms?|g|grams?|ml|millilitres?|milliliters?|l|ltr|litres?|liters?|lb|lbs|pounds?|oz|ounces?)\b/i';
-
-        if (preg_match($pattern, $text, $matches)) {
-            $value = (float) str_replace(',', '.', $matches[1]);
-            $unit = strtolower($matches[2]);
-
-            $multiplier = self::WEIGHT_TO_GRAMS[$unit] ?? 1;
-
-            return (int) round($value * $multiplier);
-        }
-
-        return null;
+        return app(ProductNormalizer::class)->parseWeight($text);
     }
 
     /**

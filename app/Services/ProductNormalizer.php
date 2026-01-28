@@ -28,15 +28,35 @@ class ProductNormalizer
 
     /**
      * Weight unit conversions to grams.
+     * Comprehensive mapping including all unit variations from all extractors.
      *
      * @var array<string, float>
      */
     private const WEIGHT_TO_GRAMS = [
         'kg' => 1000.0,
+        'kilograms' => 1000.0,
+        'kilogram' => 1000.0,
         'g' => 1.0,
-        'lb' => 453.592,
-        'lbs' => 453.592,
-        'oz' => 28.3495,
+        'grams' => 1.0,
+        'gram' => 1.0,
+        'ml' => 1.0,
+        'millilitres' => 1.0,
+        'milliliters' => 1.0,
+        'millilitre' => 1.0,
+        'milliliter' => 1.0,
+        'l' => 1000.0,
+        'ltr' => 1000.0,
+        'litre' => 1000.0,
+        'litres' => 1000.0,
+        'liter' => 1000.0,
+        'liters' => 1000.0,
+        'lb' => 454.0,
+        'lbs' => 454.0,
+        'pounds' => 454.0,
+        'pound' => 454.0,
+        'oz' => 28.0,
+        'ounces' => 28.0,
+        'ounce' => 28.0,
     ];
 
     /**
@@ -104,14 +124,30 @@ class ProductNormalizer
      */
     public function extractWeightFromTitle(string $title): ?int
     {
-        // Match patterns like "2kg", "400g", "15 kg", "2.5kg"
-        if (preg_match('/(\d+(?:\.\d+)?)\s*(kg|g|lb|lbs|oz)\b/i', $title, $matches)) {
-            $value = (float) $matches[1];
+        return $this->parseWeight($title);
+    }
+
+    /**
+     * Parse weight from a text string (title, description, etc.) and convert to grams.
+     *
+     * Handles various patterns like "2.5kg", "400g", "500ml", "1l", "1.5 kg", "5 lb"
+     * Supports comma or period as decimal separator.
+     *
+     * @param  string  $text  The text to parse for weight
+     * @return int|null Weight in grams, or null if not found
+     */
+    public function parseWeight(string $text): ?int
+    {
+        // Comprehensive pattern matching all unit variations from all extractors
+        $pattern = '/(\d+(?:[.,]\d+)?)\s*(kg|kilograms?|g|grams?|ml|millilitres?|milliliters?|l|ltr|litres?|liters?|lb|lbs|pounds?|oz|ounces?)\b/i';
+
+        if (preg_match($pattern, $text, $matches)) {
+            $value = (float) str_replace(',', '.', $matches[1]);
             $unit = strtolower($matches[2]);
 
-            if (isset(self::WEIGHT_TO_GRAMS[$unit])) {
-                return (int) round($value * self::WEIGHT_TO_GRAMS[$unit]);
-            }
+            $multiplier = self::WEIGHT_TO_GRAMS[$unit] ?? 1.0;
+
+            return (int) round($value * $multiplier);
         }
 
         return null;

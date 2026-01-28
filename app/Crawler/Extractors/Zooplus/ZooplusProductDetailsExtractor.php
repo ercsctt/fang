@@ -9,6 +9,7 @@ use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\Concerns\ExtractsBarcode;
 use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
 use App\Crawler\Services\CategoryExtractor;
+use App\Services\ProductNormalizer;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
@@ -25,15 +26,6 @@ class ZooplusProductDetailsExtractor implements ExtractorInterface
     /**
      * Weight conversion factors to grams.
      */
-    private const WEIGHT_TO_GRAMS = [
-        'kg' => 1000,
-        'g' => 1,
-        'ml' => 1,
-        'l' => 1000,
-        'ltr' => 1000,
-        'litre' => 1000,
-        'litres' => 1000,
-    ];
 
     /**
      * Get all known brands for Zooplus (core brands + Zooplus-specific brands).
@@ -578,18 +570,7 @@ class ZooplusProductDetailsExtractor implements ExtractorInterface
      */
     public function parseWeight(string $text): ?int
     {
-        $pattern = '/(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|ltr|litre|litres)\b/i';
-
-        if (preg_match($pattern, $text, $matches)) {
-            $value = (float) str_replace(',', '.', $matches[1]);
-            $unit = strtolower($matches[2]);
-
-            $multiplier = self::WEIGHT_TO_GRAMS[$unit] ?? 1;
-
-            return (int) round($value * $multiplier);
-        }
-
-        return null;
+        return app(ProductNormalizer::class)->parseWeight($text);
     }
 
     /**

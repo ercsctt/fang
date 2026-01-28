@@ -2,118 +2,93 @@
 
 declare(strict_types=1);
 
-namespace App\Crawler\Extractors\PetsAtHome;
+namespace App\Crawler\Extractors\BM;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
-use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
+use App\Crawler\Extractors\Concerns\ExtractsBarcode;
 use App\Crawler\Services\CategoryExtractor;
 use App\Services\ProductNormalizer;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
-class PAHProductDetailsExtractor implements ExtractorInterface
+class BMProductDetailsExtractor implements ExtractorInterface
 {
-    use ExtractsJsonLd;
+    use ExtractsBarcode;
 
     public function __construct(
         private readonly CategoryExtractor $categoryExtractor,
     ) {}
 
-    /**
-     * Weight conversion factors to grams.
-     */
-
-    /**
-     * Get all known brands for PetsAtHome (core brands + PetsAtHome-specific brands).
-     *
-     * @return array<string>
-     */
-    private function getKnownBrands(): array
-    {
-        return array_merge(
-            config('brands.known_brands', []),
-            config('brands.retailer_specific.petsathome', [])
-        );
-    }
-
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
 
-        // Try to extract product data from JSON-LD first (most reliable)
-        $jsonLdData = $this->extractJsonLd($crawler);
-
-        $title = $this->extractTitle($crawler, $jsonLdData);
-        $price = $this->extractPrice($crawler, $jsonLdData);
+        $title = $this->extractTitle($crawler);
+        $price = $this->extractPrice($crawler);
 
         if ($title === null) {
-            Log::warning("PAHProductDetailsExtractor: Could not extract title from {$url}");
+            Log::warning("BMProductDetailsExtractor: Could not extract title from {$url}");
         }
 
         if ($price === null) {
-            Log::warning("PAHProductDetailsExtractor: Could not extract price from {$url}");
+            Log::warning("BMProductDetailsExtractor: Could not extract price from {$url}");
         }
 
-        $weightData = $this->extractWeightAndQuantity($title ?? '', $crawler, $jsonLdData);
+        $weightData = $this->extractWeightAndQuantity($title ?? '', $crawler);
 
         yield new ProductDetails(
             title: $title ?? 'Unknown Product',
-            description: $this->extractDescription($crawler, $jsonLdData),
-            brand: $this->extractBrand($crawler, $jsonLdData, $title),
+            description: $this->extractDescription($crawler),
+            brand: $this->extractBrand($crawler, $title),
             pricePence: $price ?? 0,
-            originalPricePence: $this->extractOriginalPrice($crawler, $jsonLdData),
+            originalPricePence: $this->extractOriginalPrice($crawler),
             currency: 'GBP',
             weightGrams: $weightData['weight'],
             quantity: $weightData['quantity'],
-            images: $this->extractImages($crawler, $jsonLdData),
+            images: $this->extractImages($crawler),
             ingredients: $this->extractIngredients($crawler),
             nutritionalInfo: null,
-            inStock: $this->extractStockStatus($crawler, $jsonLdData),
+            inStock: $this->extractStockStatus($crawler),
             stockQuantity: null,
-            externalId: $this->extractExternalId($url, $crawler, $jsonLdData),
+            externalId: $this->extractExternalId($url, $crawler),
             category: $this->extractCategory($crawler, $url),
             metadata: [
                 'source_url' => $url,
                 'extracted_at' => now()->toIso8601String(),
-                'retailer' => 'pets-at-home',
-                'rating_value' => $jsonLdData['aggregateRating']['ratingValue'] ?? null,
-                'review_count' => $jsonLdData['aggregateRating']['reviewCount'] ?? null,
+                'retailer' => 'bm',
             ],
+            barcode: $this->extractBarcode($crawler),
         );
 
-        Log::info("PAHProductDetailsExtractor: Successfully extracted product details from {$url}");
+        Log::info("BMProductDetailsExtractor: Successfully extracted product details from {$url}");
     }
 
     public function canHandle(string $url): bool
     {
-        if (str_contains($url, 'petsathome.com')) {
-            // Handle product URLs: /product/product-name-slug/PRODUCTCODE
-            return (bool) preg_match('/\/product\/[a-z0-9-]+\/[A-Z0-9]+$/i', $url);
+        // Handle B&M product URLs
+        if (str_contains($url, 'bmstores.co.uk')) {
+            return str_contains($url, '/product/')
+                || preg_match('/\/p\/\d+/', $url) === 1
+                || preg_match('/\/pd\/[a-z0-9-]+/i', $url) === 1;
         }
 
         return false;
     }
 
     /**
-     * Extract product title.
-     *
-     * @param  array<string, mixed>  $jsonLdData
+     * Extract product title from the page.
      */
-    private function extractTitle(Crawler $crawler, array $jsonLdData): ?string
+    private function extractTitle(Crawler $crawler): ?string
     {
-        // Try JSON-LD first
-        if (! empty($jsonLdData['name'])) {
-            return trim($jsonLdData['name']);
-        }
-
         $selectors = [
-            'h1[data-testid="product-title"]',
             'h1.product-title',
+            'h1[data-product-title]',
             '.product-name h1',
-            '.pdp-title',
-            '[data-product-title]',
+            '.pdp-title h1',
+            '[data-testid="product-title"]',
+            '.product-details h1',
             'h1',
         ];
 
@@ -127,7 +102,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Title selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -136,32 +111,17 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Extract current price in pence.
-     *
-     * @param  array<string, mixed>  $jsonLdData
      */
-    private function extractPrice(Crawler $crawler, array $jsonLdData): ?int
+    private function extractPrice(Crawler $crawler): ?int
     {
-        // Try JSON-LD offers first - find the lowest price offer
-        if (! empty($jsonLdData['offers'])) {
-            $offers = $jsonLdData['offers'];
-            if (! is_array($offers)) {
-                $offers = [$offers];
-            }
-
-            // For products with multiple size options, use the first/default price
-            if (! empty($offers[0]['price'])) {
-                $price = (float) $offers[0]['price'];
-
-                return (int) round($price * 100);
-            }
-        }
-
         $selectors = [
-            '[data-testid="product-price"]',
             '.product-price',
-            '.price-current',
             '[data-price]',
+            '.price-current',
             '.pdp-price',
+            '.price .current',
+            '[data-testid="product-price"]',
+            '.product-details .price',
             '.price',
         ];
 
@@ -169,6 +129,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             try {
                 $element = $crawler->filter($selector);
                 if ($element->count() > 0) {
+                    // First try data attribute
                     $dataPrice = $element->first()->attr('data-price');
                     if ($dataPrice !== null) {
                         $price = $this->parsePriceToPence($dataPrice);
@@ -177,6 +138,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                         }
                     }
 
+                    // Then try text content
                     $priceText = trim($element->first()->text());
                     $price = $this->parsePriceToPence($priceText);
                     if ($price !== null) {
@@ -184,7 +146,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Price selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Price selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -193,10 +155,8 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Extract original/was price in pence.
-     *
-     * @param  array<string, mixed>  $jsonLdData
      */
-    private function extractOriginalPrice(Crawler $crawler, array $jsonLdData): ?int
+    private function extractOriginalPrice(Crawler $crawler): ?int
     {
         $selectors = [
             '.was-price',
@@ -204,15 +164,17 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             '.original-price',
             '.price-rrp',
             '[data-original-price]',
+            '.price .was',
+            '.strikethrough-price',
             's.price',
             'del.price',
-            '.strikethrough-price',
         ];
 
         foreach ($selectors as $selector) {
             try {
                 $element = $crawler->filter($selector);
                 if ($element->count() > 0) {
+                    // First try data attribute
                     $dataPrice = $element->first()->attr('data-original-price');
                     if ($dataPrice !== null) {
                         $price = $this->parsePriceToPence($dataPrice);
@@ -228,7 +190,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Original price selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Original price selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -237,21 +199,16 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Extract product description.
-     *
-     * @param  array<string, mixed>  $jsonLdData
      */
-    private function extractDescription(Crawler $crawler, array $jsonLdData): ?string
+    private function extractDescription(Crawler $crawler): ?string
     {
-        // Try JSON-LD first
-        if (! empty($jsonLdData['description'])) {
-            return trim($jsonLdData['description']);
-        }
-
         $selectors = [
-            '[data-testid="product-description"]',
             '.product-description',
+            '[data-description]',
             '.description-content',
             '.pdp-description',
+            '[data-testid="product-description"]',
+            '.product-details .description',
             '#product-description',
             '.product-info-description',
         ];
@@ -266,7 +223,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Description selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Description selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -276,60 +233,43 @@ class PAHProductDetailsExtractor implements ExtractorInterface
     /**
      * Extract product images.
      *
-     * @param  array<string, mixed>  $jsonLdData
      * @return array<string>
      */
-    private function extractImages(Crawler $crawler, array $jsonLdData): array
+    private function extractImages(Crawler $crawler): array
     {
         $images = [];
+        $selectors = [
+            '.product-image img',
+            '.gallery img',
+            '[data-product-image]',
+            '.pdp-image img',
+            '.product-gallery img',
+            '[data-testid="product-image"] img',
+            '.product-media img',
+            '.carousel img',
+        ];
 
-        // Try JSON-LD first
-        if (! empty($jsonLdData['image'])) {
-            $jsonImages = $jsonLdData['image'];
-            if (is_string($jsonImages)) {
-                $images[] = $jsonImages;
-            } elseif (is_array($jsonImages)) {
-                foreach ($jsonImages as $img) {
-                    if (is_string($img)) {
-                        $images[] = $img;
-                    } elseif (is_array($img) && isset($img['url'])) {
-                        $images[] = $img['url'];
-                    }
-                }
-            }
-        }
+        foreach ($selectors as $selector) {
+            try {
+                $elements = $crawler->filter($selector);
+                if ($elements->count() > 0) {
+                    $elements->each(function (Crawler $node) use (&$images) {
+                        // Try various image source attributes
+                        $src = $node->attr('src')
+                            ?? $node->attr('data-src')
+                            ?? $node->attr('data-lazy-src')
+                            ?? $node->attr('data-original');
 
-        // If no JSON-LD images, try DOM selectors
-        if (empty($images)) {
-            $selectors = [
-                '.product-image img',
-                '.gallery img',
-                '[data-product-image]',
-                '.pdp-image img',
-                '.product-gallery img',
-                '.carousel img',
-                '.product-media img',
-            ];
-
-            foreach ($selectors as $selector) {
-                try {
-                    $elements = $crawler->filter($selector);
-                    if ($elements->count() > 0) {
-                        $elements->each(function (Crawler $node) use (&$images) {
-                            $src = $node->attr('src')
-                                ?? $node->attr('data-src')
-                                ?? $node->attr('data-lazy-src');
-
-                            if ($src && ! in_array($src, $images)) {
-                                if (! str_contains($src, 'placeholder') && ! str_contains($src, 'loading')) {
-                                    $images[] = $src;
-                                }
+                        if ($src && ! in_array($src, $images)) {
+                            // Skip placeholder images
+                            if (! str_contains($src, 'placeholder') && ! str_contains($src, 'loading')) {
+                                $images[] = $src;
                             }
-                        });
-                    }
-                } catch (\Exception $e) {
-                    Log::debug("PAHProductDetailsExtractor: Image selector {$selector} failed: {$e->getMessage()}");
+                        }
+                    });
                 }
+            } catch (\Exception $e) {
+                Log::debug("BMProductDetailsExtractor: Image selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -338,29 +278,16 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Extract product brand.
-     *
-     * @param  array<string, mixed>  $jsonLdData
      */
-    private function extractBrand(Crawler $crawler, array $jsonLdData, ?string $title): ?string
+    private function extractBrand(Crawler $crawler, ?string $title): ?string
     {
-        // Try JSON-LD brand first
-        if (! empty($jsonLdData['brand'])) {
-            $brand = $jsonLdData['brand'];
-            if (is_string($brand)) {
-                return $brand;
-            }
-            if (is_array($brand) && ! empty($brand['name'])) {
-                return $brand['name'];
-            }
-        }
-
-        // Try DOM selectors
+        // Try direct brand selectors
         $selectors = [
-            '[data-testid="product-brand"]',
             '.product-brand',
-            '.brand-name',
             '[data-brand]',
-            'a[href*="/brands/"]',
+            '.brand-name',
+            '[data-testid="product-brand"]',
+            '.pdp-brand',
         ];
 
         foreach ($selectors as $selector) {
@@ -372,19 +299,61 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                         return $brand;
                     }
 
+                    // Check data attribute
                     $dataBrand = $element->first()->attr('data-brand');
                     if ($dataBrand !== null && ! empty(trim($dataBrand))) {
                         return trim($dataBrand);
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Brand selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Brand selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
-        // Try to extract from title
+        // Try extracting from breadcrumbs
+        $brand = $this->extractBrandFromBreadcrumbs($crawler);
+        if ($brand !== null) {
+            return $brand;
+        }
+
+        // Try extracting from title
         if ($title !== null) {
             return $this->extractBrandFromTitle($title);
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract brand from breadcrumbs.
+     */
+    private function extractBrandFromBreadcrumbs(Crawler $crawler): ?string
+    {
+        $breadcrumbSelectors = [
+            '.breadcrumb a',
+            '.breadcrumbs a',
+            '[data-testid="breadcrumb"] a',
+            'nav.breadcrumb a',
+        ];
+
+        foreach ($breadcrumbSelectors as $selector) {
+            try {
+                $elements = $crawler->filter($selector);
+                if ($elements->count() > 0) {
+                    // Brand is often the second-to-last breadcrumb (before product name)
+                    $breadcrumbs = $elements->each(fn (Crawler $node) => trim($node->text()));
+                    $breadcrumbs = array_filter($breadcrumbs);
+
+                    // Look for known brand patterns
+                    foreach ($breadcrumbs as $crumb) {
+                        if ($this->looksLikeBrand($crumb)) {
+                            return $crumb;
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::debug("BMProductDetailsExtractor: Breadcrumb selector {$selector} failed: {$e->getMessage()}");
+            }
         }
 
         return null;
@@ -395,16 +364,47 @@ class PAHProductDetailsExtractor implements ExtractorInterface
      */
     private function extractBrandFromTitle(string $title): ?string
     {
-        foreach ($this->getKnownBrands() as $brand) {
+        // Common pet food brands
+        $knownBrands = [
+            'Pedigree',
+            'Whiskas',
+            'Felix',
+            'Iams',
+            'Royal Canin',
+            'Purina',
+            'Harringtons',
+            'Bakers',
+            'Wainwright',
+            'Burns',
+            'James Wellbeloved',
+            'Lily\'s Kitchen',
+            'Forthglade',
+            'Butcher\'s',
+            'Cesar',
+            'Webbox',
+            'Good Boy',
+            'Dreamies',
+            'Wagg',
+            'Naturo',
+            'AVA',
+            'Applaws',
+            'Canagan',
+            'Orijen',
+            'Acana',
+        ];
+
+        foreach ($knownBrands as $brand) {
             if (stripos($title, $brand) !== false) {
                 return $brand;
             }
         }
 
-        // Try first word if it looks like a brand
+        // Try to extract the first word(s) as brand (common pattern)
+        // e.g., "Pedigree Adult Dog Food" -> "Pedigree"
         $words = explode(' ', $title);
         if (count($words) > 1) {
             $firstWord = $words[0];
+            // If it looks like a brand (capitalized, not a common word)
             if ($this->looksLikeBrand($firstWord)) {
                 return $firstWord;
             }
@@ -418,6 +418,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
      */
     private function looksLikeBrand(string $text): bool
     {
+        // Skip common non-brand words
         $skipWords = [
             'home',
             'products',
@@ -435,69 +436,43 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             'the',
             'and',
             'or',
-            'dry',
-            'wet',
-            'adult',
-            'puppy',
-            'senior',
-            'kitten',
         ];
 
         return ! empty($text)
             && strlen($text) > 2
             && ! in_array(strtolower($text), $skipWords)
-            && preg_match('/^[A-Z]/', $text);
+            && preg_match('/^[A-Z]/', $text); // Starts with capital letter
     }
 
     /**
-     * Extract weight and quantity.
+     * Extract weight and quantity from title and page.
      *
-     * @param  array<string, mixed>  $jsonLdData
      * @return array{weight: int|null, quantity: int|null}
      */
-    private function extractWeightAndQuantity(string $title, Crawler $crawler, array $jsonLdData): array
+    private function extractWeightAndQuantity(string $title, Crawler $crawler): array
     {
         $weight = null;
         $quantity = null;
 
-        // Try to get weight from JSON-LD offers (often in SKU description)
-        if (! empty($jsonLdData['offers'])) {
-            $offers = $jsonLdData['offers'];
-            if (! is_array($offers)) {
-                $offers = [$offers];
-            }
-            foreach ($offers as $offer) {
-                if (! empty($offer['name'])) {
-                    $weight = $this->parseWeight($offer['name']);
+        // Try to extract from page elements first
+        $weightSelectors = [
+            '.product-weight',
+            '[data-weight]',
+            '.weight',
+            '.size',
+        ];
+
+        foreach ($weightSelectors as $selector) {
+            try {
+                $element = $crawler->filter($selector);
+                if ($element->count() > 0) {
+                    $weight = $this->parseWeight($element->first()->text());
                     if ($weight !== null) {
                         break;
                     }
                 }
-            }
-        }
-
-        // Try DOM selectors
-        if ($weight === null) {
-            $weightSelectors = [
-                '.product-weight',
-                '[data-weight]',
-                '.size-selector option:checked',
-                '.weight-selector .selected',
-                '.product-size',
-            ];
-
-            foreach ($weightSelectors as $selector) {
-                try {
-                    $element = $crawler->filter($selector);
-                    if ($element->count() > 0) {
-                        $weight = $this->parseWeight($element->first()->text());
-                        if ($weight !== null) {
-                            break;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::debug("PAHProductDetailsExtractor: Weight selector {$selector} failed: {$e->getMessage()}");
-                }
+            } catch (\Exception $e) {
+                Log::debug("BMProductDetailsExtractor: Weight selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -507,11 +482,11 @@ class PAHProductDetailsExtractor implements ExtractorInterface
         }
 
         // Extract quantity/pack size
-        if (preg_match('/(\d+)\s*(?:pack|x|pcs|pieces|count)\b/i', $title, $matches)) {
+        if (preg_match('/(\d+)\s*(?:pack|x|pcs|pieces|count)/i', $title, $matches)) {
             $quantity = (int) $matches[1];
         }
 
-        // Handle "12 x 400g" pattern
+        // Also check for "x" pattern like "12 x 400g"
         if (preg_match('/(\d+)\s*x\s*\d+/i', $title, $matches)) {
             $quantity = (int) $matches[1];
         }
@@ -532,33 +507,10 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Extract stock status.
-     *
-     * @param  array<string, mixed>  $jsonLdData
      */
-    private function extractStockStatus(Crawler $crawler, array $jsonLdData): bool
+    private function extractStockStatus(Crawler $crawler): bool
     {
-        // Check JSON-LD offers for availability
-        if (! empty($jsonLdData['offers'])) {
-            $offers = $jsonLdData['offers'];
-            if (! is_array($offers)) {
-                $offers = [$offers];
-            }
-
-            foreach ($offers as $offer) {
-                $availability = $offer['availability'] ?? null;
-                if ($availability !== null) {
-                    $availability = strtolower($availability);
-                    if (str_contains($availability, 'instock') || str_contains($availability, 'in_stock')) {
-                        return true;
-                    }
-                    if (str_contains($availability, 'outofstock') || str_contains($availability, 'out_of_stock')) {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        // Check DOM for out of stock indicators
+        // Check for out of stock indicators first
         $outOfStockSelectors = [
             '.out-of-stock',
             '[data-stock-status="out"]',
@@ -582,6 +534,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
         $inStockSelectors = [
             '.in-stock',
             '[data-stock-status="in"]',
+            '[data-stock-status="available"]',
             '.available',
             '[data-testid="in-stock"]',
         ];
@@ -597,44 +550,58 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             }
         }
 
-        // Default to in stock
+        // Check data attribute on product container
+        try {
+            $productElement = $crawler->filter('[data-stock-status]');
+            if ($productElement->count() > 0) {
+                $status = strtolower($productElement->first()->attr('data-stock-status') ?? '');
+                if (in_array($status, ['out', 'outofstock', 'out-of-stock', 'unavailable'])) {
+                    return false;
+                }
+                if (in_array($status, ['in', 'instock', 'in-stock', 'available'])) {
+                    return true;
+                }
+            }
+        } catch (\Exception $e) {
+            // Default to in stock
+        }
+
+        // Default to assuming in stock if we can't determine
         return true;
     }
 
     /**
-     * Extract external product ID.
-     *
-     * @param  array<string, mixed>  $jsonLdData
+     * Extract external product ID from URL or page.
      */
-    public function extractExternalId(string $url, ?Crawler $crawler = null, array $jsonLdData = []): ?string
+    public function extractExternalId(string $url, ?Crawler $crawler = null): ?string
     {
-        // Try URL pattern first: /product/product-name/PRODUCTCODE
-        if (preg_match('/\/product\/[^\/]+\/([A-Z0-9]+)$/i', $url, $matches)) {
+        // Try to extract from URL patterns
+        // Pattern: /product/product-name-123456
+        if (preg_match('/\/product\/[^\/]*?-(\d+)(?:\/|$|\?)/i', $url, $matches)) {
             return $matches[1];
         }
 
-        // Try JSON-LD SKU
-        if (! empty($jsonLdData['sku'])) {
-            return $jsonLdData['sku'];
+        // Pattern: /p/123456
+        if (preg_match('/\/p\/(\d+)/i', $url, $matches)) {
+            return $matches[1];
         }
 
-        // Try JSON-LD offers SKU
-        if (! empty($jsonLdData['offers'])) {
-            $offers = $jsonLdData['offers'];
-            if (! is_array($offers)) {
-                $offers = [$offers];
-            }
-            if (! empty($offers[0]['sku'])) {
-                return $offers[0]['sku'];
-            }
+        // Pattern: /pd/product-name or /pd/123456
+        if (preg_match('/\/pd\/([a-z0-9-]+)/i', $url, $matches)) {
+            return $matches[1];
         }
 
-        // Try DOM selectors
+        // Pattern: product_id=123456 or productId=123456
+        if (preg_match('/(?:product[_-]?id)=([a-z0-9-]+)/i', $url, $matches)) {
+            return $matches[1];
+        }
+
+        // Try to extract from page if crawler provided
         if ($crawler !== null) {
             $idSelectors = [
                 '[data-product-id]',
                 '[data-sku]',
-                '[data-product-code]',
+                '[data-item-id]',
                 'input[name="product_id"]',
             ];
 
@@ -644,7 +611,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     if ($element->count() > 0) {
                         $id = $element->first()->attr('data-product-id')
                             ?? $element->first()->attr('data-sku')
-                            ?? $element->first()->attr('data-product-code')
+                            ?? $element->first()->attr('data-item-id')
                             ?? $element->first()->attr('value');
 
                         if ($id !== null && ! empty(trim($id))) {
@@ -661,7 +628,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract category.
+     * Extract category from breadcrumbs or URL.
      */
     private function extractCategory(Crawler $crawler, string $url): ?string
     {
@@ -670,7 +637,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract ingredients.
+     * Extract ingredients if available.
      */
     private function extractIngredients(Crawler $crawler): ?string
     {
@@ -680,8 +647,6 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             '.product-ingredients',
             '#ingredients',
             '.composition',
-            '[data-testid="ingredients"]',
-            '.ingredient-list',
         ];
 
         foreach ($selectors as $selector) {
@@ -694,7 +659,7 @@ class PAHProductDetailsExtractor implements ExtractorInterface
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Ingredients selector {$selector} failed: {$e->getMessage()}");
+                Log::debug("BMProductDetailsExtractor: Ingredients selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -703,9 +668,13 @@ class PAHProductDetailsExtractor implements ExtractorInterface
 
     /**
      * Parse a price string and convert to pence.
+     *
+     * @param  string  $priceText  Price text like "£12.99", "12.99", "1299p"
+     * @return int|null Price in pence
      */
     public function parsePriceToPence(string $priceText): ?int
     {
+        // Clean the string
         $priceText = trim($priceText);
 
         if (empty($priceText)) {
@@ -728,10 +697,12 @@ class PAHProductDetailsExtractor implements ExtractorInterface
             return ($pounds * 100) + $pence;
         }
 
-        // Handle whole number
+        // Handle whole number (could be pounds or pence)
         if (preg_match('/^(\d+)$/', $cleaned, $matches)) {
             $value = (int) $matches[1];
 
+            // If the value is less than 100, assume it's pounds
+            // If 100 or more, assume it's already pence
             return $value < 100 ? $value * 100 : $value;
         }
 

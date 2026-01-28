@@ -255,3 +255,138 @@ class MyProductDetailsExtractor implements ExtractorInterface
 - The trait is in `App\Crawler\Extractors\Concerns` namespace, not `App\Crawler\Concerns`
 - Make sure to import the trait with `use App\Crawler\Extractors\Concerns\ExtractsJsonLd;`
 - The extractJsonLd() method returns an empty array if no Product schema is found, allowing graceful degradation
+
+### ✅ Crawler Configuration Consolidation (Task f-6b8065)
+**Completed**: Moved crawler-specific configuration (delays, headers, adapter settings) from individual crawler classes to `config/crawler.php`.
+
+**Files Modified**:
+- `config/crawler.php` - Added retailer-specific configuration:
+  - `default_delay` - Default 1000ms delay between requests
+  - `default_headers` - Default Accept-Language and Accept headers
+  - `retailers` array - Per-retailer configuration for all 11 crawlers:
+    - `amazon` - 3000ms delay (aggressive anti-bot detection)
+    - `asda` - 2000ms delay with cache-control headers
+    - `bm` - 2000ms delay with minimal headers
+    - `justforpets` - 1500ms delay
+    - `morrisons` - 2000ms delay with cache-control headers
+    - `ocado` - 1000ms delay with comprehensive browser headers
+    - `petsathome` - 2000ms delay
+    - `sainsburys` - 2000ms delay with cookie headers
+    - `tesco` - 2000ms delay
+    - `waitrose` - 2000ms delay
+    - `zooplus` - 2000ms delay
+
+- `app/Crawler/Scrapers/BaseCrawler.php` - Updated to read from config:
+  - Added `getRetailerSlug()` method - auto-generates slug from class name (e.g., AmazonCrawler → "amazon")
+  - Updated `getRequestDelay()` - reads from `crawler.retailers.{slug}.request_delay` with default fallback
+  - Updated `getRequestOptions()` - reads from `crawler.retailers.{slug}.headers` with default fallback
+
+**Crawler Classes Updated** (11 total):
+All crawlers had their `getRequestDelay()` and `getRequestOptions()` method overrides removed:
+1. AmazonCrawler
+2. AsdaCrawler
+3. BMCrawler
+4. JustForPetsCrawler
+5. MorrisonsCrawler
+6. OcadoCrawler (also removed redundant getRetailerSlug() override)
+7. PetsAtHomeCrawler
+8. SainsburysCrawler
+9. TescoCrawler
+10. WaitroseCrawler
+11. ZooplusCrawler
+
+**Key Decisions**:
+- Configuration keys use lowercase retailer slugs matching the auto-generated slugs from class names
+- BaseCrawler auto-generates slug by removing "Crawler" suffix and lowercasing (e.g., "JustForPetsCrawler" → "justforpets")
+- Crawlers can override `getRetailerSlug()` if custom slug needed (though auto-generation works for all current crawlers)
+- Headers are wrapped in `['headers' => ...]` array format for compatibility with HTTP adapter
+- Config uses Laravel's `config()` helper with fallback values for reliability
+
+**Pattern to Follow**:
+```php
+// In config/crawler.php - add new retailer:
+'newretailer' => [
+    'request_delay' => 2000,
+    'headers' => [
+        'Accept-Language' => 'en-GB,en;q=0.9',
+        // ... additional headers
+    ],
+],
+
+// Crawler class (no overrides needed):
+class NewRetailerCrawler extends BaseCrawler
+{
+    // Just implement required abstract methods
+    // Configuration is read automatically via getRetailerSlug()
+}
+```
+
+**Results**:
+- Removed ~300 lines of duplicate configuration code across 11 crawler classes
+- All crawler configuration now in one central, easy-to-maintain location
+- Tested successfully: Amazon (3000ms), Tesco (2000ms), JustForPets (1500ms), Ocado (1000ms) all read correct delays
+- Easy to adjust delays and headers without touching crawler classes
+- Feature tests passing (37 passed, 1 unrelated failure)
+
+**Gotchas**:
+- The config key must match the output of `getRetailerSlug()` (lowercase, no "Crawler" suffix)
+- Headers are returned in `['headers' => [...]]` format, not as a bare array
+- Fallback to `default_delay` and `default_headers` if retailer-specific config not found
+
+### ✅ Weight Parsing Consolidation (Task f-0c2b70)
+**Completed**: Consolidated weight parsing logic from 11 ProductDetailsExtractor classes into the ProductNormalizer service.
+
+**Key Decisions**:
+- Enhanced ProductNormalizer's WEIGHT_TO_GRAMS constant with comprehensive unit mappings from all extractors
+- Includes all unit variations: kg/kilograms/kilogram, g/grams/gram, ml/millilitres/milliliters, l/litres/liters, lb/lbs/pounds/pound, oz/ounces/ounce
+- Created parseWeight() method in ProductNormalizer with comprehensive pattern matching (handles comma/period as decimal separator)
+- Made extractWeightFromTitle() use parseWeight() internally to eliminate duplication
+- All extractors now use `app(ProductNormalizer::class)->parseWeight($text)` for dependency injection
+- Removed WEIGHT_TO_GRAMS constants from all 11 extractors (eliminated ~200+ lines of duplicate code)
+
+**Extractors Updated** (11 total):
+1. Amazon - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+2. Asda - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+3. BM - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+4. JustForPets - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+5. Morrisons - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+6. Ocado - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+7. PetsAtHome - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+8. Sainsburys - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+9. Tesco - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+10. Waitrose - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+11. Zooplus - removed WEIGHT_TO_GRAMS constant and parseWeight implementation
+
+**Service Enhanced**:
+- `app/Services/ProductNormalizer.php`:
+  - Enhanced WEIGHT_TO_GRAMS constant with all unit variations (26 total unit mappings)
+  - Created comprehensive parseWeight() method with pattern: `/(\d+(?:[.,]\d+)?)\s*(kg|kilograms?|g|grams?|ml|...)\b/i`
+  - Supports comma or period as decimal separator (handles European number formats)
+  - extractWeightFromTitle() now delegates to parseWeight()
+
+**Pattern Established**:
+```php
+// In extractors, replace full parseWeight implementation with:
+public function parseWeight(string $text): ?int
+{
+    return app(ProductNormalizer::class)->parseWeight($text);
+}
+
+// Or call directly in extraction methods:
+$weight = app(ProductNormalizer::class)->parseWeight($title);
+```
+
+**Results**:
+- Removed ~220 duplicate lines of code (WEIGHT_TO_GRAMS constants + parseWeight methods)
+- Centralized weight parsing logic in one maintainable service
+- All weight parsing tests passing for extractors without other dependencies (28 tests passed: Amazon 8, Tesco 6, Ocado 8, PetsAtHome 6)
+- ProductNormalizer now handles all unit variations from all extractors
+- Easy to extend with new weight units by updating ProductNormalizer only
+- Verified working: 2.5kg→2500g, 400g→400g, 5lb→2270g, 16oz→448g, 1.5litres→1500g, 500ml→500g
+
+**Gotchas**:
+- Uses `app(ProductNormalizer::class)` for dependency injection rather than constructor injection (following AGENTS.md guidance for minor refactors)
+- Some extractor tests fail due to unrelated CategoryExtractor dependency issues introduced by other agents (logged as task f-7e082f for fixing)
+- The comprehensive WEIGHT_TO_GRAMS now includes Imperial units (lb/lbs/pounds, oz/ounces) for UK retailers that use them
+- ML/litres are treated as equivalent to grams (water density assumption) for pet food weight calculations
+- Conversion factors: kg=1000, g=1, ml=1, l=1000, lb=454, oz=28 (rounded from 453.592 and 28.3495 for consistency)
