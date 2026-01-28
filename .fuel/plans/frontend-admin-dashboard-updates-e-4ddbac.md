@@ -102,5 +102,31 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Active link detection: Uses `[data-sidebar="menu-button"][data-active="true"]:has-text("...")` selector
 - Note: These tests require the development server to be running with built assets
 
+### Task f-03adec: Add browser tests for Crawl Monitoring
+- Created `tests/Browser/Admin/CrawlMonitoringTest.php` with Pest v4 browser tests
+- Tests cover:
+  1. `crawl monitoring page loads` - Verifies dashboard renders with title and description
+  2. `kpi cards display correct data` - Verifies KPI cards show correct stats from CrawlStatistic data
+  3. `retailer health table displays` - Verifies health table shows retailers with correct statuses
+  4. `retailer health table sorting shows unhealthy retailers first` - Verifies failed/degraded retailers are sorted before active
+  5. `time range filter works` - Tests 7/14/30 day filter functionality
+  6. `charts render` - Verifies chart component renders with correct labels
+  7. `failed jobs table displays` - Verifies failed jobs are listed with job names and queue
+  8. `retry job button works` - Tests retry single job functionality and database assertions
+  9. `delete job button works` - Tests delete job functionality with confirmation dialog
+- Pattern: Login flow via browser using `visit('/login')` → `fill('#email', ...)` → `fill('#password', ...)` → `click('[data-test="login-button"]')` → `assertSee('Dashboard')` → `navigate('/admin/crawl-monitoring')`
+- Uses `Hash::make('password')` for user creation in `beforeEach`
+- Test data setup: Uses `CrawlStatistic::factory()->for($retailer)->forDate(...)->create([...])` for KPI data
+- Failed jobs setup: Direct `DB::table('failed_jobs')->insert([...])` since there's no factory
+- **Known Issue**: Pest v4 browser tests are showing blank pages in the current test environment. This appears to be related to:
+  1. The embedded HTTP server not properly serving Inertia/Vue pages
+  2. Database transaction isolation (RefreshDatabase uses transactions that may not be visible to the HTTP server)
+  3. Playwright browser not receiving JavaScript/CSS assets correctly
+- **Recommendation**: Browser tests may need to run against a persistent test database (e.g., `phpunit.xml` with `DB_CONNECTION=pgsql` and a dedicated test database) rather than in-memory SQLite
+- **Environment requirements**:
+  - Run `npm run build` before executing browser tests
+  - Ensure `npx playwright install chromium` has been run
+  - May need to configure `APP_ENV=testing` with persistent database
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

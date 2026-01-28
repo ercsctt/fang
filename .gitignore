@@ -26,6 +26,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/tests/Browser/Screenshots
 .fuel/*
 !.fuel/reality.md
 !.fuel/plans/
