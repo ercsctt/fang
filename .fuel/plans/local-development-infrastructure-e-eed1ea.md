@@ -61,5 +61,24 @@ Set up local development infrastructure using Docker Compose with MySQL, Redis, 
 - Usage: `composer docker:up`, `composer docker:down`, etc.
 - **Key decision**: Used Composer scripts (Option A) since project already uses them extensively
 
+### f-d0d490: Create one-command dev setup script
+- Created `php artisan dev:setup` command at `app/Console/Commands/DevSetupCommand.php`
+- Added `composer dev:setup` script alias in `composer.json`
+- Steps automated in order:
+  1. Copy `.env.example` to `.env` if `.env` doesn't exist
+  2. Generate app key if `APP_KEY=` is empty
+  3. Start Docker services (`docker compose up -d`)
+  4. Wait for services to be healthy (polls `docker compose ps --format json`, max 30 attempts with 2s interval)
+  5. Run migrations (`php artisan migrate --force`)
+  6. Run seeders (`php artisan db:seed --force`)
+  7. Generate Wayfinder routes (`php artisan wayfinder:generate`)
+  8. Install npm dependencies (`npm install`)
+  9. Build frontend assets (`npm run build`)
+- Skip flags available: `--skip-docker`, `--skip-npm`, `--skip-migrate`, `--skip-seed`, `--skip-wayfinder`
+- Uses Laravel Prompts for styled output (green ✓ for success, red ✗ for failure, yellow ⊘ for skipped)
+- Docker health check parses NDJSON output and verifies all containers have State=running and Health=healthy
+- Success message shows next steps: `composer run dev`, `php artisan dev:check-services`, localhost URL
+- Comprehensive test coverage in `tests/Feature/DevSetupCommandTest.php`
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
