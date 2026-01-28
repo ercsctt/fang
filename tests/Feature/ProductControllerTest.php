@@ -9,7 +9,7 @@ use App\Models\Retailer;
 
 beforeEach(function () {
     $this->withoutVite();
-    $this->retailer = Retailer::factory()->create(['is_active' => true]);
+    $this->retailer = Retailer::factory()->create();
 });
 
 function attachProductToListing(ProductListing $listing, Product $product): void
@@ -122,8 +122,8 @@ test('products can be filtered by category', function () {
 });
 
 test('products can be filtered by retailer', function () {
-    $tescoRetailer = Retailer::factory()->create(['name' => 'Tesco', 'is_active' => true]);
-    $asdaRetailer = Retailer::factory()->create(['name' => 'Asda', 'is_active' => true]);
+    $tescoRetailer = Retailer::factory()->create(['name' => 'Tesco']);
+    $asdaRetailer = Retailer::factory()->create(['name' => 'Asda']);
 
     $tescoProduct = Product::factory()->create();
     $asdaProduct = Product::factory()->create();
@@ -224,8 +224,8 @@ test('search endpoint requires minimum query length', function () {
 });
 
 test('retailers filter includes only active retailers', function () {
-    $activeRetailer = Retailer::factory()->create(['is_active' => true, 'name' => 'Active Store']);
-    Retailer::factory()->create(['is_active' => false, 'name' => 'Inactive Store']);
+    $activeRetailer = Retailer::factory()->create(['name' => 'Active Store']);
+    Retailer::factory()->disabled()->create(['name' => 'Disabled Store']);
 
     $product = Product::factory()->create();
     $listing = ProductListing::factory()->create(['retailer_id' => $activeRetailer->id]);
@@ -239,5 +239,5 @@ test('retailers filter includes only active retailers', function () {
     $retailerNames = collect($inertiaProps['retailers'])->pluck('name')->toArray();
 
     expect($retailerNames)->toContain('Active Store');
-    expect($retailerNames)->not->toContain('Inactive Store');
+    expect($retailerNames)->not->toContain('Disabled Store');
 });

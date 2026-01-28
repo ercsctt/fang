@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Crawler\Aggregates\CrawlAggregate;
 use App\Domain\Crawler\Reactors\CircuitBreakerReactor;
+use App\Enums\RetailerStatus;
 use App\Models\Retailer;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+
+uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Cache::flush();
@@ -53,10 +57,10 @@ describe('circuit breaker activation', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
-        expect($retailer->is_active)->toBeTrue();
+        expect($retailer->status)->toBe(RetailerStatus::Active);
 
         // 3 failures (100% failure rate)
         for ($i = 0; $i < 3; $i++) {
@@ -68,7 +72,7 @@ describe('circuit breaker activation', function () {
         }
 
         $retailer->refresh();
-        expect($retailer->is_active)->toBeFalse()
+        expect($retailer->status)->toBe(RetailerStatus::Failed)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeTrue();
     });
 
@@ -79,7 +83,7 @@ describe('circuit breaker activation', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         // Only 2 failures (below minimum of 3)
@@ -92,7 +96,7 @@ describe('circuit breaker activation', function () {
         }
 
         $retailer->refresh();
-        expect($retailer->is_active)->toBeTrue()
+        expect($retailer->status)->toBe(RetailerStatus::Active)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeFalse();
     });
 
@@ -103,7 +107,7 @@ describe('circuit breaker activation', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         // 2 successes, 1 failure (33% failure rate, below 50% threshold)
@@ -122,7 +126,7 @@ describe('circuit breaker activation', function () {
         $aggregate->persist();
 
         $retailer->refresh();
-        expect($retailer->is_active)->toBeTrue()
+        expect($retailer->status)->toBe(RetailerStatus::Active)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeFalse();
     });
 
@@ -133,7 +137,7 @@ describe('circuit breaker activation', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         // 2 successes, 2 failures (50% failure rate, equals threshold)
@@ -154,7 +158,7 @@ describe('circuit breaker activation', function () {
         }
 
         $retailer->refresh();
-        expect($retailer->is_active)->toBeFalse()
+        expect($retailer->status)->toBe(RetailerStatus::Failed)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeTrue();
     });
 });
@@ -167,7 +171,7 @@ describe('circuit breaker reset', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         // Trigger circuit breaker
@@ -198,7 +202,7 @@ describe('circuit breaker reset', function () {
         $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => false,
+            'status' => RetailerStatus::Failed,
         ]);
 
         // Set circuit as open
@@ -207,7 +211,7 @@ describe('circuit breaker reset', function () {
         CircuitBreakerReactor::reset('B&M');
 
         $retailer->refresh();
-        expect($retailer->is_active)->toBeTrue()
+        expect($retailer->status)->toBe(RetailerStatus::Active)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeFalse();
     });
 });
@@ -220,13 +224,13 @@ describe('retailer isolation', function () {
         $bmRetailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         $pahRetailer = Retailer::factory()->create([
             'slug' => 'pets-at-home',
             'name' => 'Pets at Home',
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
         ]);
 
         // B&M failures
@@ -250,9 +254,9 @@ describe('retailer isolation', function () {
         $bmRetailer->refresh();
         $pahRetailer->refresh();
 
-        expect($bmRetailer->is_active)->toBeFalse()
+        expect($bmRetailer->status)->toBe(RetailerStatus::Failed)
             ->and(CircuitBreakerReactor::isOpen('B&M'))->toBeTrue()
-            ->and($pahRetailer->is_active)->toBeTrue()
+            ->and($pahRetailer->status)->toBe(RetailerStatus::Active)
             ->and(CircuitBreakerReactor::isOpen('Pets at Home'))->toBeFalse();
     });
 });

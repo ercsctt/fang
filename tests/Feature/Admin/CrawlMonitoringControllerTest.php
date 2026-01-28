@@ -39,10 +39,10 @@ test('crawl monitoring page loads for authenticated users', function () {
         );
 });
 
-test('crawl monitoring page shows retailers with health status', function () {
-    $healthyRetailer = Retailer::factory()->create(['name' => 'Healthy Store']);
+test('crawl monitoring page shows retailers with status', function () {
+    $activeRetailer = Retailer::factory()->create(['name' => 'Active Store']);
     $degradedRetailer = Retailer::factory()->degraded()->create(['name' => 'Degraded Store']);
-    $unhealthyRetailer = Retailer::factory()->unhealthy()->create(['name' => 'Unhealthy Store']);
+    $failedRetailer = Retailer::factory()->failed()->create(['name' => 'Failed Store']);
 
     $response = $this->actingAs($this->user)->get('/admin/crawl-monitoring');
 
@@ -363,8 +363,8 @@ test('paused retailers are correctly identified', function () {
 });
 
 test('retailer availability for crawling is correctly determined', function () {
-    Retailer::factory()->create(['name' => 'Available Store', 'is_active' => true]);
-    Retailer::factory()->inactive()->create(['name' => 'Inactive Store']);
+    Retailer::factory()->create(['name' => 'Available Store']);
+    Retailer::factory()->disabled()->create(['name' => 'Disabled Store']);
     Retailer::factory()->paused()->create(['name' => 'Paused Store']);
 
     $response = $this->actingAs($this->user)->get('/admin/crawl-monitoring');
@@ -375,10 +375,10 @@ test('retailer availability for crawling is correctly determined', function () {
     $retailers = collect($inertiaProps['retailers']);
 
     $availableRetailer = $retailers->firstWhere('name', 'Available Store');
-    $inactiveRetailer = $retailers->firstWhere('name', 'Inactive Store');
+    $disabledRetailer = $retailers->firstWhere('name', 'Disabled Store');
     $pausedRetailer = $retailers->firstWhere('name', 'Paused Store');
 
     expect($availableRetailer['is_available_for_crawling'])->toBeTrue();
-    expect($inactiveRetailer['is_available_for_crawling'])->toBeFalse();
+    expect($disabledRetailer['is_available_for_crawling'])->toBeFalse();
     expect($pausedRetailer['is_available_for_crawling'])->toBeFalse();
 });

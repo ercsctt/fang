@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\RetailerStatus;
 use App\Models\ProductListing;
 use App\Models\Retailer;
 use App\Notifications\DataFreshnessAlertNotification;
@@ -25,7 +26,7 @@ beforeEach(function () {
 describe('DataFreshnessMonitorCommand', function () {
     test('passes when all data is fresh', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(12),
         ]);
 
@@ -43,7 +44,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('detects stale products not scraped in threshold days', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -70,7 +71,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('detects retailers with no successful crawls in threshold hours', function () {
         Retailer::factory()->count(2)->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subDays(3),
         ]);
 
@@ -89,7 +90,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('detects high failure rates per retailer', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -115,14 +116,13 @@ describe('DataFreshnessMonitorCommand', function () {
         });
     });
 
-    test('skips inactive retailers when checking for inactive crawls', function () {
-        Retailer::factory()->create([
-            'is_active' => false,
+    test('skips disabled retailers when checking for inactive crawls', function () {
+        Retailer::factory()->disabled()->create([
             'last_crawled_at' => now()->subDays(10),
         ]);
 
         Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -133,7 +133,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('displays detailed report with --report flag', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subDays(2),
         ]);
 
@@ -150,7 +150,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('sends notifications only when --alert flag is set', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subDays(3),
         ]);
 
@@ -175,11 +175,11 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('groups stale products by retailer', function () {
         $retailer1 = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
         $retailer2 = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -213,7 +213,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('handles products never scraped', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now(),
         ]);
 
@@ -238,7 +238,7 @@ describe('DataFreshnessMonitorCommand', function () {
 
     test('handles retailers never crawled', function () {
         Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => null,
         ]);
 
@@ -260,7 +260,7 @@ describe('DataFreshnessMonitorCommand', function () {
         ]);
 
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -285,7 +285,7 @@ describe('DataFreshnessMonitorCommand', function () {
         ]);
 
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subHours(1),
         ]);
 
@@ -308,7 +308,7 @@ describe('DataFreshnessMonitorCommand', function () {
         config(['monitoring.notification_channels' => []]);
 
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'last_crawled_at' => now()->subDays(3),
         ]);
 

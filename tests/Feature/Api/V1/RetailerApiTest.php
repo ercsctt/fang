@@ -1,6 +1,6 @@
 <?php
 
-use App\Enums\RetailerHealthStatus;
+use App\Enums\RetailerStatus;
 use App\Models\ProductListing;
 use App\Models\Retailer;
 
@@ -20,9 +20,8 @@ describe('GET /api/v1/retailers', function () {
                         'name',
                         'slug',
                         'base_url',
-                        'is_active',
-                        'health_status',
-                        'health_status_label',
+                        'status',
+                        'status_label',
                     ],
                 ],
                 'links',
@@ -32,26 +31,26 @@ describe('GET /api/v1/retailers', function () {
     });
 
     it('filters retailers by active status', function () {
-        Retailer::factory()->create(['is_active' => true]);
-        Retailer::factory()->inactive()->create();
+        Retailer::factory()->create(['status' => RetailerStatus::Active]);
+        Retailer::factory()->disabled()->create();
 
         $response = getJson(route('api.v1.retailers.index', ['active' => 'true']));
 
         $response->assertSuccessful()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.is_active', true);
+            ->assertJsonPath('data.0.status', 'active');
     });
 
-    it('filters retailers by health status', function () {
-        Retailer::factory()->create(['health_status' => RetailerHealthStatus::Healthy]);
+    it('filters retailers by status', function () {
+        Retailer::factory()->create(['status' => RetailerStatus::Active]);
         Retailer::factory()->degraded()->create();
-        Retailer::factory()->unhealthy()->create();
+        Retailer::factory()->failed()->create();
 
-        $response = getJson(route('api.v1.retailers.index', ['health_status' => 'healthy']));
+        $response = getJson(route('api.v1.retailers.index', ['status' => 'active']));
 
         $response->assertSuccessful()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.health_status', 'healthy');
+            ->assertJsonPath('data.0.status', 'active');
     });
 
     it('includes product listings count', function () {

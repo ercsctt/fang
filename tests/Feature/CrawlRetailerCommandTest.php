@@ -60,22 +60,22 @@ test('command with --all dispatches jobs for all active retailers', function () 
     Bus::assertDispatched(CrawlProductListingsJob::class);
 });
 
-test('command skips inactive retailers with --all', function () {
+test('command skips disabled retailers with --all', function () {
     Retailer::factory()
         ->withCrawler(BMCrawler::class)
         ->create(['name' => 'B&M', 'slug' => 'bm']);
 
     Retailer::factory()
-        ->inactive()
+        ->disabled()
         ->withCrawler(TescoCrawler::class)
-        ->create(['name' => 'Inactive Store', 'slug' => 'inactive']);
+        ->create(['name' => 'Disabled Store', 'slug' => 'disabled']);
 
     $this->artisan('crawler:run --all')
         ->expectsOutputToContain('Starting B&M product listing crawler')
         ->expectsOutputToContain('1 retailer(s)')
         ->assertExitCode(0);
 
-    // Should dispatch for B&M (4 URLs), not the inactive store
+    // Should dispatch for B&M (4 URLs), not the disabled store
     Bus::assertDispatched(CrawlProductListingsJob::class);
 });
 
@@ -98,14 +98,14 @@ test('command skips paused retailers with --all', function () {
     Bus::assertDispatched(CrawlProductListingsJob::class);
 });
 
-test('command warns when trying to crawl inactive retailer by slug', function () {
+test('command warns when trying to crawl disabled retailer by slug', function () {
     Retailer::factory()
-        ->inactive()
+        ->disabled()
         ->withCrawler(BMCrawler::class)
-        ->create(['name' => 'Inactive Store', 'slug' => 'inactive']);
+        ->create(['name' => 'Disabled Store', 'slug' => 'disabled']);
 
-    $this->artisan('crawler:run inactive')
-        ->expectsOutputToContain('Skipping Inactive Store: Retailer is inactive')
+    $this->artisan('crawler:run disabled')
+        ->expectsOutputToContain('Skipping Disabled Store: Retailer is Disabled')
         ->assertExitCode(0);
 
     Bus::assertNotDispatched(CrawlProductListingsJob::class);
@@ -146,7 +146,6 @@ test('command skips retailers without crawler class', function () {
         'name' => 'No Crawler',
         'slug' => 'no-crawler',
         'crawler_class' => null,
-        'is_active' => true,
     ]);
 
     $this->artisan('crawler:run no-crawler')
