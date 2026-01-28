@@ -6,12 +6,20 @@ namespace App\Crawler\Extractors\PetsAtHome;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
+use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
+use App\Crawler\Services\CategoryExtractor;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class PAHProductDetailsExtractor implements ExtractorInterface
 {
+    use ExtractsJsonLd;
+
+    public function __construct(
+        private readonly CategoryExtractor $categoryExtractor,
+    ) {}
+
     /**
      * Weight conversion factors to grams.
      */
@@ -94,45 +102,6 @@ class PAHProductDetailsExtractor implements ExtractorInterface
         }
 
         return false;
-    }
-
-    /**
-     * Extract JSON-LD structured data from the page.
-     *
-     * @return array<string, mixed>
-     */
-    private function extractJsonLd(Crawler $crawler): array
-    {
-        try {
-            $scripts = $crawler->filter('script[type="application/ld+json"]');
-
-            foreach ($scripts as $script) {
-                $content = $script->textContent;
-                $data = json_decode($content, true);
-
-                if ($data === null) {
-                    continue;
-                }
-
-                // Handle @graph format
-                if (isset($data['@graph'])) {
-                    foreach ($data['@graph'] as $item) {
-                        if (($item['@type'] ?? null) === 'Product') {
-                            return $item;
-                        }
-                    }
-                }
-
-                // Direct Product type
-                if (($data['@type'] ?? null) === 'Product') {
-                    return $data;
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("PAHProductDetailsExtractor: Failed to extract JSON-LD: {$e->getMessage()}");
-        }
-
-        return [];
     }
 
     /**
@@ -715,43 +684,8 @@ class PAHProductDetailsExtractor implements ExtractorInterface
      */
     private function extractCategory(Crawler $crawler, string $url): ?string
     {
-        // Try breadcrumbs
-        $breadcrumbSelectors = [
-            '.breadcrumb a',
-            '.breadcrumbs a',
-            '[data-testid="breadcrumb"] a',
-            'nav.breadcrumb a',
-        ];
-
-        foreach ($breadcrumbSelectors as $selector) {
-            try {
-                $elements = $crawler->filter($selector);
-                if ($elements->count() > 1) {
-                    $crumbs = $elements->each(fn (Crawler $node) => trim($node->text()));
-                    $crumbs = array_filter($crumbs);
-                    $crumbs = array_values($crumbs);
-
-                    if (count($crumbs) >= 2) {
-                        $categoryIndex = max(0, count($crumbs) - 2);
-                        if (! in_array(strtolower($crumbs[$categoryIndex]), ['home', 'pets', ''])) {
-                            return $crumbs[$categoryIndex];
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("PAHProductDetailsExtractor: Category breadcrumb selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        // Extract from URL
-        if (preg_match('/\/(dog|cat|puppy|kitten)[-\/]?(food|treats)?/i', $url, $matches)) {
-            $animal = ucfirst(strtolower($matches[1]));
-            $type = isset($matches[2]) ? ucfirst(strtolower($matches[2])) : null;
-
-            return $type ? "{$animal} {$type}" : $animal;
-        }
-
-        return null;
+        return $this->categoryExtractor->extractFromBreadcrumbs($crawler)
+            ?? $this->categoryExtractor->extractFromUrl($url);
     }
 
     /**

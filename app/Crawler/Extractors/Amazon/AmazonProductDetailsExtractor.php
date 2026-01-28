@@ -6,12 +6,15 @@ namespace App\Crawler\Extractors\Amazon;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
+use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class AmazonProductDetailsExtractor implements ExtractorInterface
 {
+    use ExtractsJsonLd;
+
     /**
      * Weight conversion factors to grams.
      */

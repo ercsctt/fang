@@ -6,12 +6,20 @@ namespace App\Crawler\Extractors\Asda;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
+use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
+use App\Crawler\Services\CategoryExtractor;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class AsdaProductDetailsExtractor implements ExtractorInterface
 {
+    use ExtractsJsonLd;
+
+    public function __construct(
+        private readonly CategoryExtractor $categoryExtractor,
+    ) {}
+
     /**
      * Weight conversion factors to grams.
      */
@@ -774,28 +782,10 @@ class AsdaProductDetailsExtractor implements ExtractorInterface
     /**
      * Extract category from breadcrumbs.
      */
-    private function extractCategory(Crawler $crawler): ?string
+    private function extractCategory(Crawler $crawler, string $url): ?string
     {
-        try {
-            $breadcrumbs = $crawler->filter('[data-auto-id="breadcrumb"] a, .breadcrumb a, .breadcrumbs a');
-            if ($breadcrumbs->count() > 1) {
-                $crumbs = $breadcrumbs->each(fn (Crawler $node) => trim($node->text()));
-                $crumbs = array_filter($crumbs);
-                $crumbs = array_values($crumbs);
-
-                // Get the deepest relevant category
-                if (count($crumbs) >= 2) {
-                    // Return second to last (last is usually the current product)
-                    $categoryIndex = count($crumbs) - 1;
-
-                    return $crumbs[$categoryIndex];
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("AsdaProductDetailsExtractor: Category extraction failed: {$e->getMessage()}");
-        }
-
-        return null;
+        return $this->categoryExtractor->extractFromBreadcrumbs($crawler)
+            ?? $this->categoryExtractor->extractFromUrl($url);
     }
 
     /**

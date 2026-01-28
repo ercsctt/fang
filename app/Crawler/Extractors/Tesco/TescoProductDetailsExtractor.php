@@ -6,12 +6,15 @@ namespace App\Crawler\Extractors\Tesco;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductDetails;
+use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class TescoProductDetailsExtractor implements ExtractorInterface
 {
+    use ExtractsJsonLd;
+
     /**
      * Weight conversion factors to grams.
      */

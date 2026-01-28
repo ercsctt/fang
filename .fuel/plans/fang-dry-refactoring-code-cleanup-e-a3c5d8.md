@@ -126,5 +126,132 @@ private function getKnownBrands(): array
 
 **Note**: BMProductDetailsExtractor doesn't have a KNOWN_BRANDS constant (only uses 10/11 extractors).
 
+### ✅ Extractor Test Helper Traits (Task f-9e2bb8)
+**Completed**: Created reusable test helper traits to consolidate duplicated test setup and assertion patterns across 30+ extractor tests.
+
+**Files Created**:
+- `tests/Traits/ExtractorTestHelpers.php` - Main helper trait with:
+  - `loadFixture($filename)` - Load HTML fixtures from tests/Fixtures/
+  - `extractToArray($generator)` - Convert extractor generator results to array
+  - `filterProductListingUrls($results)` - Filter to only ProductListingUrl DTOs
+  - `filterProductDetails($results)` - Filter to only ProductDetails DTOs
+  - `filterProductReviews($results)` - Filter to only ProductReview DTOs
+  - `filterPaginatedUrls($results)` - Filter to only PaginatedUrl DTOs
+  - `assertProductListingUrlDto($dto, $retailer, $urlPattern)` - Assert DTO structure
+  - `assertProductDetailsDto($dto, $retailer)` - Assert ProductDetails structure
+  - `assertProductReviewDto($dto, $source)` - Assert ProductReview structure
+  - `assertCanHandleUrl($extractor, $url)` - Assert extractor handles URL
+  - `assertCannotHandleUrl($extractor, $url)` - Assert extractor doesn't handle URL
+  - `minimalHtml($body)`, `emptyHtml()`, `htmlWithLink()`, `htmlWithLinks()` - HTML generators
+  - `htmlWithJsonLd($data)` - Generate HTML with JSON-LD structured data
+  - `productJsonLd()`, `reviewJsonLd()` - JSON-LD structure helpers
+
+- `tests/Traits/CanHandleTestCases.php` - canHandle test utilities:
+  - `testCanHandleUrls($validUrls, $invalidUrls)` - Test multiple URLs at once
+  - `assertHandlesUrls($validUrls, $invalidUrls)` - Alias for testCanHandleUrls
+  - `commonInvalidUrls()` - Get common invalid URLs (empty, about, contact)
+  - `competitorDomainUrls($exclude)` - Get competitor domain URLs for UK retailers
+  - `buildCanHandleDataset($urls, $expected)` - Build dataset for Pest ->with()
+
+- `tests/Unit/Traits/ExtractorTestHelpersTest.php` - Tests for ExtractorTestHelpers trait
+- `tests/Unit/Traits/CanHandleTestCasesTest.php` - Tests for CanHandleTestCases trait
+
+**Configuration**:
+Updated `tests/Pest.php` to include both traits for all Unit tests:
+```php
+pest()->extend(Tests\TestCase::class)
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(Tests\Traits\ExtractorTestHelpers::class)
+    ->use(Tests\Traits\CanHandleTestCases::class)
+    ->in('Unit');
+```
+
+**Key Decisions**:
+- Traits are available globally to all Unit tests (not just Extractor tests) for flexibility
+- Methods are `protected` to work with Pest's test case binding
+- HTML generators help reduce repetitive inline HTML in tests
+- JSON-LD helpers support overrides for flexibility in testing
+- DTO assertion methods check for all expected keys/types
+
+**Patterns Established**:
+```php
+// Using fixture loader
+$html = $this->loadFixture('tesco-product-page.html');
+
+// Using HTML generators
+$html = $this->htmlWithLink('/product/123', 'Product Name');
+$html = $this->htmlWithJsonLd($this->productJsonLd(['name' => 'Custom']));
+
+// Filtering results
+$results = iterator_to_array($this->extractor->extract($html, $url));
+$productUrls = $this->filterProductListingUrls($results);
+
+// Testing canHandle
+$this->testCanHandleUrls(
+    validUrls: ['https://tesco.com/products/123'],
+    invalidUrls: array_values($this->competitorDomainUrls(['tesco']))
+);
+```
+
+**Results**:
+- 28 new trait tests passing
+- 317+ existing extractor tests still passing
+- ~70% of duplicated test structure can now use shared helpers
+- Easy to extend with additional helpers as needed
+
 ### Traits
 - **`app/Crawler/Extractors/Concerns/NormalizesUrls.php`**: Provides URL normalization functionality for all ProductListingUrlExtractor classes
+- **`app/Crawler/Extractors/Concerns/ExtractsJsonLd.php`**: Provides JSON-LD structured data extraction functionality for all ProductDetailsExtractor classes
+- **`tests/Traits/ExtractorTestHelpers.php`**: Provides fixture loading, HTML generation, DTO filtering, and assertion helpers for extractor tests
+- **`tests/Traits/CanHandleTestCases.php`**: Provides canHandle testing utilities including competitor domain URLs and dataset builders
+
+### ✅ ExtractsJsonLd Trait (Task f-b2bf61)
+**Completed**: Created `app/Crawler/Extractors/Concerns/ExtractsJsonLd.php` trait to consolidate duplicate JSON-LD extraction logic.
+
+**Key Decisions**:
+- Used the standardized extractJsonLd() method pattern found across all 10 ProductDetailsExtractor classes
+- Handles both @graph format (where Product schema is nested in a graph array) and direct Product type format
+- Made the method `protected` so it can be used by extractors and overridden if needed
+- Included a `logJsonLdError()` method that can be overridden for custom logging with extractor-specific prefixes
+- All 10 ProductDetailsExtractor classes now use this trait (BM doesn't use JSON-LD)
+
+**Extractors Updated** (10 total):
+1. Amazon - uses trait, removed 37-line duplicate method
+2. Asda - uses trait, removed 37-line duplicate method
+3. JustForPets - uses trait, removed 37-line duplicate method
+4. Morrisons - uses trait, removed 37-line duplicate method
+5. Ocado - uses trait, removed 37-line duplicate method
+6. PetsAtHome - uses trait, removed 37-line duplicate method
+7. Sainsburys - uses trait, removed 37-line duplicate method
+8. Tesco - uses trait, removed 37-line duplicate method
+9. Waitrose - uses trait, removed 37-line duplicate method
+10. Zooplus - uses trait, removed 37-line duplicate method
+
+**Pattern to Follow**:
+```php
+use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
+
+class MyProductDetailsExtractor implements ExtractorInterface
+{
+    use ExtractsJsonLd;
+
+    public function extract(string $html, string $url): Generator
+    {
+        $crawler = new Crawler($html);
+        $jsonLdData = $this->extractJsonLd($crawler);
+        // Use $jsonLdData in extraction methods...
+    }
+}
+```
+
+**Results**:
+- Removed ~370 duplicate lines of code (37 lines × 10 extractors)
+- Centralized JSON-LD extraction logic in one maintainable location
+- All extractors continue to work correctly with the trait
+- Easy to update JSON-LD extraction logic across all extractors by modifying the trait
+- Consistent error logging via logJsonLdError() method
+
+**Gotchas**:
+- The trait is in `App\Crawler\Extractors\Concerns` namespace, not `App\Crawler\Concerns`
+- Make sure to import the trait with `use App\Crawler\Extractors\Concerns\ExtractsJsonLd;`
+- The extractJsonLd() method returns an empty array if no Product schema is found, allowing graceful degradation

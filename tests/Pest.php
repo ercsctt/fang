@@ -16,8 +16,11 @@ pest()->extend(Tests\TestCase::class)
     ->in('Feature');
 
 // Unit tests that need Laravel features (like config, Log facades)
+// Extractor test helpers are also included for crawler tests
 pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(Tests\Traits\ExtractorTestHelpers::class)
+    ->use(Tests\Traits\CanHandleTestCases::class)
     ->in('Unit');
 
 /*
