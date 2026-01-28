@@ -333,6 +333,39 @@ class NewRetailerCrawler extends BaseCrawler
 - Headers are returned in `['headers' => [...]]` format, not as a bare array
 - Fallback to `default_delay` and `default_headers` if retailer-specific config not found
 
+### ✅ SelectsElements Trait (Task f-3c2f46)
+**Completed**: Added `app/Crawler/Extractors/Concerns/SelectsElements.php` to consolidate safe DOM selection with consistent logging.
+
+**Key Decisions**:
+- `selectFirst()` accepts optional acceptance callback to keep fallback behavior when text/attributes are empty.
+- `selectAll()` returns the first matching selector's node set for multi-element extraction.
+- Logging uses class basename via `getSelectorLogPrefix()`; overrideable for custom prefixes.
+
+**Pattern to Follow**:
+```php
+use App\Crawler\Extractors\Concerns\SelectsElements;
+
+class ExampleExtractor
+{
+    use SelectsElements;
+
+    private function extractTitle(Crawler $crawler): ?string
+    {
+        $element = $this->selectFirst(
+            $crawler,
+            ['h1', '.product-title'],
+            'Title',
+            fn (Crawler $node) => trim($node->text()) !== ''
+        );
+
+        return $element?->text();
+    }
+}
+```
+
+**Tests**:
+- `tests/Unit/Traits/SelectsElementsTest.php` covers selectFirst/selectAll behavior.
+
 ### ✅ Weight Parsing Consolidation (Task f-0c2b70)
 **Completed**: Consolidated weight parsing logic from 11 ProductDetailsExtractor classes into the ProductNormalizer service.
 
