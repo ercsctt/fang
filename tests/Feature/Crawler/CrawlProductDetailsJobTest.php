@@ -192,7 +192,7 @@ describe('with mocked HTTP adapter', function () {
             public function __construct(\App\Crawler\Contracts\HttpAdapterInterface $httpAdapter)
             {
                 parent::__construct($httpAdapter);
-                $this->addExtractor(new \App\Crawler\Extractors\BMProductDetailsExtractor);
+                $this->addExtractor(\App\Crawler\Extractors\BM\BMProductDetailsExtractor::class);
             }
 
             public function getRetailerName(): string
