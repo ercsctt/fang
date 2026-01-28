@@ -49,6 +49,10 @@
         }
     },
     "scripts": {
+        "docker:up": "docker compose up -d",
+        "docker:down": "docker compose down",
+        "docker:logs": "docker compose logs -f",
+        "docker:fresh": "docker compose down -v && docker compose up -d",
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",

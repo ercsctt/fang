@@ -33,5 +33,33 @@ Set up local development infrastructure using Docker Compose with MySQL, Redis, 
 - Added `SCOUT_DRIVER=collection` to `phpunit.xml` so tests don't require running Meilisearch instance
 - **Key decision**: Use `collection` driver in tests to avoid external service dependency
 
+### f-3e3b11: Configure Redis for queues and cache
+- Updated `QUEUE_CONNECTION=database` to `QUEUE_CONNECTION=redis` in `.env.example`
+- Updated `CACHE_STORE=database` to `CACHE_STORE=redis` in `.env.example`
+- Verified `REDIS_HOST=127.0.0.1` and `REDIS_PORT=6379` already match the docker-compose Redis service
+- No `.env` file exists (ignored by git), only `.env.example` was updated
+- This improves local dev performance by using Redis instead of database-based queues/cache
+
+### f-833c89: Create dev services health check command
+- Created `php artisan dev:check-services` command at `app/Console/Commands/CheckDevServicesCommand.php`
+- Checks PostgreSQL via `DB::connection()->getPdo()`
+- Checks Redis via `Redis::ping()` (handles both `true` and `'PONG'` responses)
+- Checks Meilisearch via HTTP GET to `/health` endpoint using `config('scout.meilisearch.host')`
+- Uses Laravel Prompts (`info()`, `error()`) for styled output
+- Green checkmark for success, red X for failures
+- Summary shows pass count and lists failing services with docker compose instructions
+- Returns exit code 0 on success, 1 on any failure
+- Error messages are simplified (e.g., "Connection refused - is the service running?") and truncated to 100 chars
+
+### f-159e5e: Add docker convenience scripts
+- Added composer scripts following existing project conventions (no Makefile)
+- Scripts added to `composer.json`:
+  - `docker:up` - Start containers in detached mode
+  - `docker:down` - Stop containers
+  - `docker:logs` - Follow container logs
+  - `docker:fresh` - Remove volumes and restart (clean slate)
+- Usage: `composer docker:up`, `composer docker:down`, etc.
+- **Key decision**: Used Composer scripts (Option A) since project already uses them extensively
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
