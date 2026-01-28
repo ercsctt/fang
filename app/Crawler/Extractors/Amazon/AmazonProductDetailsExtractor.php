@@ -4,95 +4,14 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Amazon;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\ProductDetails;
-use App\Crawler\Extractors\Concerns\ExtractsJsonLd;
-use App\Services\ProductNormalizer;
-use Generator;
-use Illuminate\Support\Facades\Log;
+use App\Crawler\Extractors\BaseProductDetailsExtractor;
 use Symfony\Component\DomCrawler\Crawler;
 
-class AmazonProductDetailsExtractor implements ExtractorInterface
+class AmazonProductDetailsExtractor extends BaseProductDetailsExtractor
 {
-    use ExtractsJsonLd;
-
-    /**
-     * Get all known brands for Amazon (core brands + Amazon-specific brands).
-     *
-     * @return array<string>
-     */
-    private function getKnownBrands(): array
-    {
-        return array_merge(
-            config('brands.known_brands', []),
-            config('brands.retailer_specific.amazon', [])
-        );
-    }
-
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Check for CAPTCHA or blocked page
-        if ($this->isBlockedPage($crawler, $html)) {
-            Log::warning("AmazonProductDetailsExtractor: Blocked/CAPTCHA page detected at {$url}");
-
-            return;
-        }
-
-        // Try to extract product data from JSON-LD first (most reliable)
-        $jsonLdData = $this->extractJsonLd($crawler);
-
-        $title = $this->extractTitle($crawler, $jsonLdData);
-        $price = $this->extractPrice($crawler, $jsonLdData);
-
-        if ($title === null) {
-            Log::warning("AmazonProductDetailsExtractor: Could not extract title from {$url}");
-        }
-
-        if ($price === null) {
-            Log::warning("AmazonProductDetailsExtractor: Could not extract price from {$url}");
-        }
-
-        $asin = $this->extractAsin($url, $crawler);
-        $weightData = $this->extractWeightAndQuantity($title ?? '', $crawler);
-
-        yield new ProductDetails(
-            title: $title ?? 'Unknown Product',
-            description: $this->extractDescription($crawler, $jsonLdData),
-            brand: $this->extractBrand($crawler, $jsonLdData, $title),
-            pricePence: $price ?? 0,
-            originalPricePence: $this->extractOriginalPrice($crawler),
-            currency: 'GBP',
-            weightGrams: $weightData['weight'],
-            quantity: $weightData['quantity'],
-            images: $this->extractImages($crawler, $jsonLdData),
-            ingredients: $this->extractIngredients($crawler),
-            nutritionalInfo: null,
-            inStock: $this->extractStockStatus($crawler),
-            stockQuantity: null,
-            externalId: $asin,
-            category: $this->extractCategory($crawler),
-            metadata: [
-                'source_url' => $url,
-                'extracted_at' => now()->toIso8601String(),
-                'retailer' => 'amazon-uk',
-                'asin' => $asin,
-                'rating_value' => $this->extractRating($crawler),
-                'review_count' => $this->extractReviewCount($crawler),
-                'subscribe_save_price' => $this->extractSubscribeAndSavePrice($crawler),
-                'deal_badge' => $this->extractDealBadge($crawler),
-                'prime_eligible' => $this->isPrimeEligible($crawler),
-            ],
-        );
-
-        Log::info("AmazonProductDetailsExtractor: Successfully extracted product details from {$url}");
-    }
-
     public function canHandle(string $url): bool
     {
         if (str_contains($url, 'amazon.co.uk')) {
-            // Handle product detail pages: /dp/ASIN or /gp/product/ASIN
             return preg_match('/\/dp\/[A-Z0-9]{10}(?:\/|$|\?)/i', $url) === 1
                 || preg_match('/\/gp\/product\/[A-Z0-9]{10}(?:\/|$|\?)/i', $url) === 1;
         }
@@ -100,17 +19,403 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
         return false;
     }
 
+    protected function getRetailerSlug(): string
+    {
+        return 'amazon-uk';
+    }
+
+    protected function getBrandConfigKey(): string
+    {
+        return 'amazon';
+    }
+
+    protected function shouldExtract(Crawler $crawler, string $html, string $url): bool
+    {
+        if ($this->isBlockedPage($crawler, $html)) {
+            $this->logWarning("Blocked/CAPTCHA page detected at {$url}");
+
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function getTitleSelectors(): array
+    {
+        return [
+            '#productTitle',
+            '#title span',
+            'h1.a-size-large',
+            'h1[data-automation-id="title"]',
+            '#titleSection #title',
+            'h1',
+        ];
+    }
+
+    protected function getPriceSelectors(): array
+    {
+        return [
+            '.priceToPay .a-offscreen',
+            '.priceToPay span.a-price-whole',
+            '#corePrice_feature_div .a-price .a-offscreen',
+            '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
+            '#priceblock_ourprice',
+            '#priceblock_dealprice',
+            '#priceblock_saleprice',
+            '.a-price .a-offscreen',
+            'span[data-a-color="price"] .a-offscreen',
+            '.a-price-whole',
+        ];
+    }
+
+    protected function getOriginalPriceSelectors(): array
+    {
+        return [
+            '.basisPrice .a-offscreen',
+            'span[data-a-strike="true"] .a-offscreen',
+            '.a-text-strike .a-offscreen',
+            '#listPrice',
+            '#priceblock_listprice',
+            '.a-price[data-a-strike="true"] .a-offscreen',
+            '#rrp .a-offscreen',
+            '.rrp .a-offscreen',
+        ];
+    }
+
+    protected function getDescriptionSelectors(): array
+    {
+        return [
+            '#productDescription p',
+            '#productDescription',
+            '#feature-bullets ul',
+            '#feature-bullets',
+            '#aplus_feature_div',
+            '#aplus3p_feature_div',
+            '[data-feature-name="productDescription"]',
+        ];
+    }
+
+    protected function getImageSelectors(): array
+    {
+        return [
+            '#imgTagWrapperId img',
+            '#landingImage',
+            '#main-image',
+            '.imgTagWrapper img',
+            '#imageBlock img',
+        ];
+    }
+
+    protected function getBrandSelectors(): array
+    {
+        return [
+            '#bylineInfo',
+            '.po-brand .a-span9',
+            '#brand',
+            '#bylineInfo_feature_div a',
+            '#brandBylineWrapper',
+            '#brandBylineWrapper a',
+            '#bylineInfo_feature_div span',
+            '.prodDetSectionEntry:contains("Brand") + td',
+            'tr:contains("Brand") td',
+            '#detailBullets_feature_div li:contains("Brand") span.a-text-bold + span',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $jsonLdData
+     */
+    protected function extractBrand(Crawler $crawler, array $jsonLdData, ?string $title): ?string
+    {
+        $brand = parent::extractBrand($crawler, $jsonLdData, $title);
+
+        if ($brand === null) {
+            return null;
+        }
+
+        $brand = preg_replace('/^visit the\s+/i', '', $brand) ?? $brand;
+        $brand = preg_replace('/\s+store$/i', '', $brand) ?? $brand;
+        $brand = preg_replace('/^brand:\s*/i', '', $brand) ?? $brand;
+        $brand = preg_replace('/^by\s+/i', '', $brand) ?? $brand;
+
+        $brand = trim($brand);
+
+        return $brand !== '' ? $brand : null;
+    }
+
+    protected function getWeightSelectors(): array
+    {
+        return [];
+    }
+
+    protected function getIngredientsSelectors(): array
+    {
+        return [
+            '#important-information',
+            '#aplus_feature_div',
+            '#productDescription',
+            '.ingredients',
+            '[data-feature-name="ingredients"]',
+        ];
+    }
+
+    protected function getOutOfStockSelectors(): array
+    {
+        return [];
+    }
+
+    protected function getInStockSelectors(): array
+    {
+        return [];
+    }
+
+    protected function getAddToCartSelectors(): array
+    {
+        return [];
+    }
+
+    protected function getQuantityPatterns(): array
+    {
+        return [
+            '/(\d+)\s*(?:pack|count|pcs|pieces|tins|pouches|sachets|bags)\b/i',
+        ];
+    }
+
+    protected function normalizeImageUrl(string $url): string
+    {
+        return $this->upgradeImageUrl($url);
+    }
+
+    protected function extractExternalId(string $url, Crawler $crawler, array $jsonLdData): ?string
+    {
+        return $this->extractAsin($url, $crawler);
+    }
+
+    protected function extractWeightAndQuantity(string $title, Crawler $crawler, array $jsonLdData = []): array
+    {
+        $weight = null;
+        $quantity = null;
+
+        try {
+            $rows = $crawler->filter('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li, .prodDetTable tr');
+            foreach ($rows as $row) {
+                $rowCrawler = new Crawler($row);
+                $text = strtolower($rowCrawler->text());
+
+                if (str_contains($text, 'weight') || str_contains($text, 'size')) {
+                    $weight = $this->parseWeight($text);
+                    if ($weight !== null) {
+                        break;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Continue
+        }
+
+        try {
+            $sizeElement = $crawler->filter('#variation_size_name .selection, #twister_feature_div .selection');
+            if ($sizeElement->count() > 0) {
+                $weight = $this->parseWeight($sizeElement->first()->text());
+            }
+        } catch (\Exception $e) {
+            // Continue
+        }
+
+        if ($weight === null && $title !== '') {
+            $weight = $this->parseWeight($title);
+        }
+
+        $quantity = $this->extractQuantityFromTitle($title);
+
+        return [
+            'weight' => $weight,
+            'quantity' => $quantity,
+        ];
+    }
+
+    protected function extractStockStatus(Crawler $crawler, array $jsonLdData): bool
+    {
+        $selectors = [
+            '#availability',
+            '#availability span',
+            '#outOfStock',
+            '#add-to-cart-button',
+        ];
+
+        foreach ($selectors as $selector) {
+            try {
+                $element = $crawler->filter($selector);
+                if ($element->count() > 0) {
+                    $text = strtolower(trim($element->first()->text()));
+
+                    if (str_contains($text, 'out of stock')
+                        || str_contains($text, 'currently unavailable')
+                        || str_contains($text, 'not available')) {
+                        return false;
+                    }
+
+                    if (str_contains($text, 'in stock')
+                        || str_contains($text, 'available')
+                        || str_contains($text, 'add to basket')) {
+                        return true;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Continue
+            }
+        }
+
+        try {
+            $addToCart = $crawler->filter('#add-to-cart-button, #addToCart');
+            if ($addToCart->count() > 0) {
+                return true;
+            }
+        } catch (\Exception $e) {
+            // Continue
+        }
+
+        return true;
+    }
+
+    protected function extractImages(Crawler $crawler, array $jsonLdData): array
+    {
+        $images = parent::extractImages($crawler, $jsonLdData);
+
+        try {
+            $scripts = $crawler->filter('script');
+            foreach ($scripts as $script) {
+                $content = $script->textContent;
+                if (str_contains($content, 'colorImages') || str_contains($content, 'imageGalleryData')) {
+                    if (preg_match_all('/"hiRes"\s*:\s*"([^"]+)"/', $content, $matches)) {
+                        foreach ($matches[1] as $url) {
+                            $normalized = $this->normalizeImageUrl($url);
+                            if ($this->shouldIncludeImageUrl($normalized, $images) && str_contains($normalized, 'amazon')) {
+                                $images[] = $normalized;
+                            }
+                        }
+                    }
+                    if (preg_match_all('/"large"\s*:\s*"([^"]+)"/', $content, $matches)) {
+                        foreach ($matches[1] as $url) {
+                            $normalized = $this->normalizeImageUrl($url);
+                            if ($this->shouldIncludeImageUrl($normalized, $images) && str_contains($normalized, 'amazon')) {
+                                $images[] = $normalized;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logDebug("Image script parsing failed: {$e->getMessage()}");
+        }
+
+        foreach ($this->getImageSelectors() as $selector) {
+            try {
+                $elements = $crawler->filter($selector);
+                if ($elements->count() > 0) {
+                    $elements->each(function (Crawler $node) use (&$images) {
+                        $src = $node->attr('data-old-hires')
+                            ?? $node->attr('data-a-dynamic-image')
+                            ?? $node->attr('src');
+
+                        if ($src === null) {
+                            return;
+                        }
+
+                        if (str_starts_with($src, '{')) {
+                            $imageData = json_decode($src, true);
+                            if (is_array($imageData)) {
+                                foreach (array_keys($imageData) as $url) {
+                                    $normalized = $this->normalizeImageUrl((string) $url);
+                                    if ($this->shouldIncludeImageUrl($normalized, $images)) {
+                                        $images[] = $normalized;
+                                    }
+                                }
+                            }
+
+                            return;
+                        }
+
+                        $normalized = $this->normalizeImageUrl($src);
+                        if ($this->shouldIncludeImageUrl($normalized, $images) && str_contains($normalized, 'amazon')) {
+                            $images[] = $normalized;
+                        }
+                    });
+                }
+            } catch (\Exception $e) {
+                $this->logDebug("Image selector {$selector} failed: {$e->getMessage()}");
+            }
+        }
+
+        return array_values(array_unique($images));
+    }
+
+    protected function extractIngredients(Crawler $crawler): ?string
+    {
+        foreach ($this->getIngredientsSelectors() as $selector) {
+            try {
+                $element = $crawler->filter($selector);
+                if ($element->count() > 0) {
+                    $text = $element->first()->text();
+                    if (preg_match('/(?:ingredients|composition)[:\s]*([^.]+(?:\.[^.]+){0,5})/i', $text, $matches)) {
+                        return trim($matches[1]);
+                    }
+                }
+            } catch (\Exception $e) {
+                $this->logDebug("Ingredients selector {$selector} failed: {$e->getMessage()}");
+            }
+        }
+
+        return null;
+    }
+
+    protected function extractCategory(Crawler $crawler, string $url): ?string
+    {
+        try {
+            $breadcrumb = $crawler->filter('#wayfinding-breadcrumbs_container ul.a-unordered-list a, #nav-subnav .nav-a-content');
+            if ($breadcrumb->count() > 0) {
+                $crumbs = $breadcrumb->each(fn (Crawler $node) => trim($node->text()));
+                $crumbs = array_values(array_filter($crumbs));
+
+                if (count($crumbs) >= 2) {
+                    $categoryIndex = count($crumbs) - 1;
+
+                    return $crumbs[$categoryIndex];
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logDebug("Category extraction failed: {$e->getMessage()}");
+        }
+
+        return null;
+    }
+
+    protected function buildMetadata(
+        Crawler $crawler,
+        string $url,
+        ?string $externalId,
+        array $jsonLdData,
+        array $weightData
+    ): array {
+        return array_merge(parent::buildMetadata($crawler, $url, $externalId, $jsonLdData, $weightData), [
+            'asin' => $externalId,
+            'rating_value' => $this->extractRating($crawler),
+            'review_count' => $this->extractReviewCount($crawler),
+            'subscribe_save_price' => $this->extractSubscribeAndSavePrice($crawler),
+            'deal_badge' => $this->extractDealBadge($crawler),
+            'prime_eligible' => $this->isPrimeEligible($crawler),
+        ]);
+    }
+
     /**
      * Check if the page is blocked or shows a CAPTCHA.
      */
     private function isBlockedPage(Crawler $crawler, string $html): bool
     {
-        // Check for CAPTCHA
         if (str_contains($html, 'captcha') || str_contains($html, 'robot check')) {
             return true;
         }
 
-        // Check for "Sorry" page
         try {
             $sorryTitle = $crawler->filter('title');
             if ($sorryTitle->count() > 0) {
@@ -127,178 +432,11 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract JSON-LD structured data from the page.
-     *
-     * @return array<string, mixed>
+     * Upgrade Amazon image URL to larger size.
      */
-    private function extractJsonLd(Crawler $crawler): array
+    private function upgradeImageUrl(string $url): string
     {
-        try {
-            $scripts = $crawler->filter('script[type="application/ld+json"]');
-
-            foreach ($scripts as $script) {
-                $content = $script->textContent;
-                $data = json_decode($content, true);
-
-                if ($data === null) {
-                    continue;
-                }
-
-                // Handle @graph format
-                if (isset($data['@graph'])) {
-                    foreach ($data['@graph'] as $item) {
-                        if (($item['@type'] ?? null) === 'Product') {
-                            return $item;
-                        }
-                    }
-                }
-
-                // Direct Product type
-                if (($data['@type'] ?? null) === 'Product') {
-                    return $data;
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("AmazonProductDetailsExtractor: Failed to extract JSON-LD: {$e->getMessage()}");
-        }
-
-        return [];
-    }
-
-    /**
-     * Extract product title.
-     *
-     * @param  array<string, mixed>  $jsonLdData
-     */
-    private function extractTitle(Crawler $crawler, array $jsonLdData): ?string
-    {
-        // Try JSON-LD first
-        if (! empty($jsonLdData['name'])) {
-            return trim($jsonLdData['name']);
-        }
-
-        // Amazon-specific selectors
-        $selectors = [
-            '#productTitle',
-            '#title span',
-            'h1.a-size-large',
-            'h1[data-automation-id="title"]',
-            '#titleSection #title',
-            'h1',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $title = trim($element->first()->text());
-                    if (! empty($title)) {
-                        return $title;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Title selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract current price in pence.
-     *
-     * @param  array<string, mixed>  $jsonLdData
-     */
-    private function extractPrice(Crawler $crawler, array $jsonLdData): ?int
-    {
-        // Try JSON-LD offers first
-        if (! empty($jsonLdData['offers'])) {
-            $offers = $jsonLdData['offers'];
-
-            // Check if offers is a single offer object (associative array) or array of offers
-            // A single offer will have @type or price at the top level
-            if (isset($offers['@type']) || isset($offers['price'])) {
-                $offers = [$offers];
-            }
-
-            foreach ($offers as $offer) {
-                if (! empty($offer['price'])) {
-                    $price = (float) $offer['price'];
-
-                    return (int) round($price * 100);
-                }
-            }
-        }
-
-        // Amazon-specific price selectors (in order of preference)
-        $selectors = [
-            // Current deal/sale price
-            '.priceToPay .a-offscreen',
-            '.priceToPay span.a-price-whole',
-            '#corePrice_feature_div .a-price .a-offscreen',
-            '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
-            // Regular price display
-            '#priceblock_ourprice',
-            '#priceblock_dealprice',
-            '#priceblock_saleprice',
-            '.a-price .a-offscreen',
-            'span[data-a-color="price"] .a-offscreen',
-            // Fallback
-            '.a-price-whole',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $priceText = trim($element->first()->text());
-                    $price = $this->parsePriceToPence($priceText);
-                    if ($price !== null && $price > 0) {
-                        return $price;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Price selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract original/RRP price in pence.
-     */
-    private function extractOriginalPrice(Crawler $crawler): ?int
-    {
-        $selectors = [
-            // Amazon's "Was" price selectors
-            '.basisPrice .a-offscreen',
-            'span[data-a-strike="true"] .a-offscreen',
-            '.a-text-strike .a-offscreen',
-            '#listPrice',
-            '#priceblock_listprice',
-            '.a-price[data-a-strike="true"] .a-offscreen',
-            // RRP
-            '#rrp .a-offscreen',
-            '.rrp .a-offscreen',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $priceText = trim($element->first()->text());
-                    $price = $this->parsePriceToPence($priceText);
-                    if ($price !== null && $price > 0) {
-                        return $price;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Original price selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        return null;
+        return preg_replace('/\._[A-Z]{2}\d+_\./', '._SL1500_.', $url) ?? $url;
     }
 
     /**
@@ -319,16 +457,13 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
                 $element = $crawler->filter($selector);
                 if ($element->count() > 0) {
                     $priceText = trim($element->first()->text());
-                    if (empty($priceText)) {
-                        $priceText = $element->first()->attr('data-sns-price') ?? '';
-                    }
                     $price = $this->parsePriceToPence($priceText);
-                    if ($price !== null && $price > 0) {
+                    if ($price !== null) {
                         return $price;
                     }
                 }
             } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: S&S price selector {$selector} failed: {$e->getMessage()}");
+                // Continue
             }
         }
 
@@ -336,16 +471,17 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract deal badge text if present.
+     * Extract deal badge text.
      */
     private function extractDealBadge(Crawler $crawler): ?string
     {
         $selectors = [
-            '#dealBadge_feature_div',
             '.dealBadge',
-            '#deal_badge',
-            '.a-badge-deal',
-            '[data-feature-name="dealBadge"]',
+            '.savingsPercentage',
+            '.dealBadgeText',
+            '.priceBlockDealPriceString',
+            '.saving-price',
+            '.savingsPercentage',
         ];
 
         foreach ($selectors as $selector) {
@@ -363,410 +499,6 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
         }
 
         return null;
-    }
-
-    /**
-     * Extract product description.
-     *
-     * @param  array<string, mixed>  $jsonLdData
-     */
-    private function extractDescription(Crawler $crawler, array $jsonLdData): ?string
-    {
-        // Try JSON-LD first
-        if (! empty($jsonLdData['description'])) {
-            return trim($jsonLdData['description']);
-        }
-
-        // Amazon product description selectors
-        $selectors = [
-            '#productDescription p',
-            '#productDescription',
-            '#feature-bullets ul',
-            '#feature-bullets',
-            '#aplus_feature_div',
-            '#aplus3p_feature_div',
-            '[data-feature-name="productDescription"]',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $description = trim($element->first()->text());
-                    if (! empty($description)) {
-                        return $description;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Description selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract product images.
-     *
-     * @param  array<string, mixed>  $jsonLdData
-     * @return array<string>
-     */
-    private function extractImages(Crawler $crawler, array $jsonLdData): array
-    {
-        $images = [];
-
-        // Try JSON-LD first
-        if (! empty($jsonLdData['image'])) {
-            $jsonImages = $jsonLdData['image'];
-            if (is_string($jsonImages)) {
-                $images[] = $jsonImages;
-            } elseif (is_array($jsonImages)) {
-                foreach ($jsonImages as $img) {
-                    if (is_string($img)) {
-                        $images[] = $this->upgradeImageUrl($img);
-                    } elseif (is_array($img) && isset($img['url'])) {
-                        $images[] = $this->upgradeImageUrl($img['url']);
-                    }
-                }
-            }
-        }
-
-        // Try Amazon's image gallery scripts
-        try {
-            $scripts = $crawler->filter('script');
-            foreach ($scripts as $script) {
-                $content = $script->textContent;
-                if (str_contains($content, 'colorImages') || str_contains($content, 'imageGalleryData')) {
-                    // Look for large image URLs in the script
-                    if (preg_match_all('/"hiRes"\s*:\s*"([^"]+)"/', $content, $matches)) {
-                        foreach ($matches[1] as $url) {
-                            if (! in_array($url, $images) && str_contains($url, 'amazon')) {
-                                $images[] = $url;
-                            }
-                        }
-                    }
-                    // Also check for large attribute
-                    if (preg_match_all('/"large"\s*:\s*"([^"]+)"/', $content, $matches)) {
-                        foreach ($matches[1] as $url) {
-                            if (! in_array($url, $images) && str_contains($url, 'amazon')) {
-                                $images[] = $this->upgradeImageUrl($url);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("AmazonProductDetailsExtractor: Image script parsing failed: {$e->getMessage()}");
-        }
-
-        // Fallback to DOM selectors
-        if (empty($images)) {
-            $selectors = [
-                '#imgTagWrapperId img',
-                '#landingImage',
-                '#main-image',
-                '.imgTagWrapper img',
-                '#imageBlock img',
-            ];
-
-            foreach ($selectors as $selector) {
-                try {
-                    $elements = $crawler->filter($selector);
-                    if ($elements->count() > 0) {
-                        $elements->each(function (Crawler $node) use (&$images) {
-                            // Try various image source attributes
-                            $src = $node->attr('data-old-hires')
-                                ?? $node->attr('data-a-dynamic-image')
-                                ?? $node->attr('src');
-
-                            if ($src && ! in_array($src, $images)) {
-                                // Handle data-a-dynamic-image which contains JSON
-                                if (str_starts_with($src, '{')) {
-                                    $imageData = json_decode($src, true);
-                                    if (is_array($imageData)) {
-                                        foreach (array_keys($imageData) as $url) {
-                                            if (! in_array($url, $images)) {
-                                                $images[] = $this->upgradeImageUrl($url);
-                                            }
-                                        }
-                                    }
-                                } elseif (str_contains($src, 'amazon')) {
-                                    $images[] = $this->upgradeImageUrl($src);
-                                }
-                            }
-                        });
-                    }
-                } catch (\Exception $e) {
-                    Log::debug("AmazonProductDetailsExtractor: Image selector {$selector} failed: {$e->getMessage()}");
-                }
-            }
-        }
-
-        return array_values(array_unique($images));
-    }
-
-    /**
-     * Upgrade Amazon image URL to larger size.
-     */
-    private function upgradeImageUrl(string $url): string
-    {
-        // Amazon image URLs have size indicators like _SX300_ or _SL1500_
-        // Replace with larger size
-        return preg_replace('/\._[A-Z]{2}\d+_\./', '._SL1500_.', $url) ?? $url;
-    }
-
-    /**
-     * Extract product brand.
-     *
-     * @param  array<string, mixed>  $jsonLdData
-     */
-    private function extractBrand(Crawler $crawler, array $jsonLdData, ?string $title): ?string
-    {
-        // Try JSON-LD brand first
-        if (! empty($jsonLdData['brand'])) {
-            $brand = $jsonLdData['brand'];
-            if (is_string($brand)) {
-                return $brand;
-            }
-            if (is_array($brand) && ! empty($brand['name'])) {
-                return $brand['name'];
-            }
-        }
-
-        // Amazon-specific brand selectors
-        $selectors = [
-            '#bylineInfo',
-            '.po-brand .a-span9',
-            '#brand',
-            'a#bylineInfo',
-            '[data-feature-name="bylineInfo"]',
-            'tr.po-brand td.a-span9',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    // Clean up "Visit the X Store" or "Brand: X" format
-                    $text = preg_replace('/^(Visit the |Brand:\s*)/i', '', $text);
-                    $text = preg_replace('/\s+Store$/i', '', $text);
-                    if (! empty($text)) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Brand selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        // Try to extract from product details table
-        try {
-            $rows = $crawler->filter('#productDetails_techSpec_section_1 tr, #productDetails_detailBullets_sections1 tr');
-            foreach ($rows as $row) {
-                $rowCrawler = new Crawler($row);
-                $label = $rowCrawler->filter('th, td:first-child')->text();
-                if (stripos($label, 'brand') !== false) {
-                    $value = $rowCrawler->filter('td:last-child, td:nth-child(2)')->text();
-
-                    return trim($value);
-                }
-            }
-        } catch (\Exception $e) {
-            // Continue
-        }
-
-        // Try to extract from title
-        if ($title !== null) {
-            return $this->extractBrandFromTitle($title);
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract brand from product title.
-     */
-    private function extractBrandFromTitle(string $title): ?string
-    {
-        foreach ($this->getKnownBrands() as $brand) {
-            if (stripos($title, $brand) !== false) {
-                return $brand;
-            }
-        }
-
-        // Amazon titles often start with the brand
-        $words = explode(' ', $title);
-        if (count($words) > 1) {
-            $firstWord = $words[0];
-            if ($this->looksLikeBrand($firstWord)) {
-                // Check if first two words might be the brand
-                if (count($words) > 2 && $this->looksLikeBrand($words[1])) {
-                    return $words[0].' '.$words[1];
-                }
-
-                return $firstWord;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Check if a string looks like it could be a brand name.
-     */
-    private function looksLikeBrand(string $text): bool
-    {
-        $skipWords = [
-            'the',
-            'a',
-            'an',
-            'new',
-            'best',
-            'premium',
-            'deluxe',
-            'original',
-            'natural',
-            'organic',
-            'pack',
-            'size',
-            'dog',
-            'cat',
-            'pet',
-            'puppy',
-            'kitten',
-            'adult',
-            'senior',
-            'food',
-            'treats',
-            'dry',
-            'wet',
-            'complete',
-        ];
-
-        return ! empty($text)
-            && strlen($text) > 1
-            && ! in_array(strtolower($text), $skipWords)
-            && preg_match('/^[A-Z]/', $text);
-    }
-
-    /**
-     * Extract weight and quantity.
-     *
-     * @return array{weight: int|null, quantity: int|null}
-     */
-    private function extractWeightAndQuantity(string $title, Crawler $crawler): array
-    {
-        $weight = null;
-        $quantity = null;
-
-        // Try to get from product details table
-        try {
-            $rows = $crawler->filter('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li, .prodDetTable tr');
-            foreach ($rows as $row) {
-                $rowCrawler = new Crawler($row);
-                $text = strtolower($rowCrawler->text());
-
-                if (str_contains($text, 'weight') || str_contains($text, 'size')) {
-                    $weight = $this->parseWeight($text);
-                    if ($weight !== null) {
-                        break;
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            // Continue
-        }
-
-        // Try Amazon's specific size/weight display
-        try {
-            $sizeElement = $crawler->filter('#variation_size_name .selection, #twister_feature_div .selection');
-            if ($sizeElement->count() > 0) {
-                $weight = $this->parseWeight($sizeElement->first()->text());
-            }
-        } catch (\Exception $e) {
-            // Continue
-        }
-
-        // Fall back to parsing from title
-        if ($weight === null) {
-            $weight = $this->parseWeight($title);
-        }
-
-        // Extract quantity/pack size
-        if (preg_match('/(\d+)\s*(?:pack|count|pcs|pieces|tins|pouches|sachets|bags)\b/i', $title, $matches)) {
-            $quantity = (int) $matches[1];
-        }
-
-        // Handle "12 x 400g" pattern
-        if (preg_match('/(\d+)\s*x\s*\d+/i', $title, $matches)) {
-            $quantity = (int) $matches[1];
-        }
-
-        return [
-            'weight' => $weight,
-            'quantity' => $quantity,
-        ];
-    }
-
-    /**
-     * Parse weight text and convert to grams.
-     */
-    public function parseWeight(string $text): ?int
-    {
-        return app(ProductNormalizer::class)->parseWeight($text);
-    }
-
-    /**
-     * Extract stock status.
-     */
-    private function extractStockStatus(Crawler $crawler): bool
-    {
-        // Check Amazon's availability section
-        $selectors = [
-            '#availability',
-            '#availability span',
-            '#outOfStock',
-            '#add-to-cart-button',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $text = strtolower(trim($element->first()->text()));
-
-                    // Check for out of stock indicators
-                    if (str_contains($text, 'out of stock')
-                        || str_contains($text, 'currently unavailable')
-                        || str_contains($text, 'not available')) {
-                        return false;
-                    }
-
-                    // Check for in stock indicators
-                    if (str_contains($text, 'in stock')
-                        || str_contains($text, 'available')
-                        || str_contains($text, 'add to basket')) {
-                        return true;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        // Check for add to cart button existence
-        try {
-            $addToCart = $crawler->filter('#add-to-cart-button, #addToCart');
-            if ($addToCart->count() > 0) {
-                return true;
-            }
-        } catch (\Exception $e) {
-            // Continue
-        }
-
-        // Default to in stock
-        return true;
     }
 
     /**
@@ -788,7 +520,6 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
      */
     public function extractAsin(string $url, ?Crawler $crawler = null): ?string
     {
-        // Try URL patterns first
         if (preg_match('/\/dp\/([A-Z0-9]{10})(?:\/|$|\?)/i', $url, $matches)) {
             return strtoupper($matches[1]);
         }
@@ -797,87 +528,17 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
             return strtoupper($matches[1]);
         }
 
-        // Try to find ASIN in page
         if ($crawler !== null) {
             try {
-                // Check for ASIN in product details
-                $rows = $crawler->filter('#detailBullets_feature_div li, #productDetails_techSpec_section_1 tr');
-                foreach ($rows as $row) {
-                    $text = (new Crawler($row))->text();
-                    if (preg_match('/ASIN[:\s]+([A-Z0-9]{10})/i', $text, $matches)) {
-                        return strtoupper($matches[1]);
-                    }
-                }
-
-                // Check for data-asin attribute
-                $asinElement = $crawler->filter('[data-asin]');
+                $asinElement = $crawler->filter('#ASIN, [name="ASIN"]');
                 if ($asinElement->count() > 0) {
-                    $asin = $asinElement->first()->attr('data-asin');
-                    if ($asin !== null && strlen($asin) === 10) {
-                        return strtoupper($asin);
+                    $asin = $asinElement->first()->attr('value');
+                    if ($asin !== null && ! empty(trim($asin))) {
+                        return strtoupper(trim($asin));
                     }
                 }
             } catch (\Exception $e) {
                 // Continue
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract category from breadcrumbs.
-     */
-    private function extractCategory(Crawler $crawler): ?string
-    {
-        try {
-            $breadcrumbs = $crawler->filter('#wayfinding-breadcrumbs_feature_div a, .a-breadcrumb a');
-            if ($breadcrumbs->count() > 1) {
-                $crumbs = $breadcrumbs->each(fn (Crawler $node) => trim($node->text()));
-                $crumbs = array_filter($crumbs);
-                $crumbs = array_values($crumbs);
-
-                // Get the deepest relevant category
-                if (count($crumbs) >= 2) {
-                    // Return second to last (last is usually the current product)
-                    $categoryIndex = count($crumbs) - 1;
-
-                    return $crumbs[$categoryIndex];
-                }
-            }
-        } catch (\Exception $e) {
-            Log::debug("AmazonProductDetailsExtractor: Category extraction failed: {$e->getMessage()}");
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract ingredients from product details.
-     */
-    private function extractIngredients(Crawler $crawler): ?string
-    {
-        // Try important information section
-        $selectors = [
-            '#important-information',
-            '#aplus_feature_div',
-            '#productDescription',
-            '.ingredients',
-            '[data-feature-name="ingredients"]',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $crawler->filter($selector);
-                if ($element->count() > 0) {
-                    $text = $element->first()->text();
-                    // Look for ingredients section
-                    if (preg_match('/(?:ingredients|composition)[:\s]*([^.]+(?:\.[^.]+){0,5})/i', $text, $matches)) {
-                        return trim($matches[1]);
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductDetailsExtractor: Ingredients selector {$selector} failed: {$e->getMessage()}");
             }
         }
 
@@ -910,52 +571,15 @@ class AmazonProductDetailsExtractor implements ExtractorInterface
     private function extractReviewCount(Crawler $crawler): ?int
     {
         try {
-            $reviewElement = $crawler->filter('#acrCustomerReviewText, #acrCustomerReviewLink');
-            if ($reviewElement->count() > 0) {
-                $text = $reviewElement->first()->text();
-                if (preg_match('/([\d,]+)\s*(?:ratings?|reviews?|customer)/i', $text, $matches)) {
+            $countElement = $crawler->filter('#acrCustomerReviewText, [data-hook="total-review-count"], #reviewCount');
+            if ($countElement->count() > 0) {
+                $text = $countElement->first()->text();
+                if (preg_match('/(\d+[\d,]*)/', $text, $matches)) {
                     return (int) str_replace(',', '', $matches[1]);
                 }
             }
         } catch (\Exception $e) {
             // Continue
-        }
-
-        return null;
-    }
-
-    /**
-     * Parse a price string and convert to pence.
-     */
-    public function parsePriceToPence(string $priceText): ?int
-    {
-        $priceText = trim($priceText);
-
-        if (empty($priceText)) {
-            return null;
-        }
-
-        // Handle pence format (e.g., "99p", "1299p")
-        if (preg_match('/^(\d+)p$/i', $priceText, $matches)) {
-            return (int) $matches[1];
-        }
-
-        // Remove currency symbols and whitespace
-        $cleaned = preg_replace('/[£$€\s,]/', '', $priceText);
-
-        // Handle decimal format (e.g., "12.99", "12,99")
-        if (preg_match('/^(\d+)[.,](\d{1,2})$/', $cleaned, $matches)) {
-            $pounds = (int) $matches[1];
-            $pence = (int) str_pad($matches[2], 2, '0');
-
-            return ($pounds * 100) + $pence;
-        }
-
-        // Handle whole number
-        if (preg_match('/^(\d+)$/', $cleaned, $matches)) {
-            $value = (int) $matches[1];
-
-            return $value < 100 ? $value * 100 : $value;
         }
 
         return null;

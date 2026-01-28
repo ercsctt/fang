@@ -44,6 +44,29 @@ Refactor the Fang codebase to follow DRY principles - consolidate duplicate code
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
 
+### ✅ BaseProductDetailsExtractor DRY Refactor (Task f-4ee2eb)
+**Completed**: Extended `BaseProductDetailsExtractor` to cover shared product details logic (barcode inclusion + JSON-LD weight parsing) and refactored remaining extractors to rely on shared selectors and metadata hooks.
+
+**Base Changes**:
+- `app/Crawler/Extractors/BaseProductDetailsExtractor.php`
+  - Passes JSON-LD into `extractWeightAndQuantity()` and includes JSON-LD offer name parsing by default.
+  - Adds `extractBarcode()` hook and passes barcode into `ProductDetails` output.
+
+**Extractors Updated**:
+1. `app/Crawler/Extractors/Ocado/OcadoProductDetailsExtractor.php` - now extends base with selector overrides, blocked page detection, barcode hook, metadata merge.
+2. `app/Crawler/Extractors/Waitrose/WaitroseProductDetailsExtractor.php` - now extends base, uses ExtractsBarcode, metadata for myWaitrose price.
+3. `app/Crawler/Extractors/Sainsburys/SainsburysProductDetailsExtractor.php` - now extends base, image URL normalization, nectar/multibuy metadata.
+4. `app/Crawler/Extractors/Morrisons/MorrisonsProductDetailsExtractor.php` - now extends base, price drop + loyalty metadata.
+5. `app/Crawler/Extractors/Zooplus/ZooplusProductDetailsExtractor.php` - now extends base, uses ExtractsBarcode, nutritional info override, image content attr handling.
+
+**Supporting Updates**:
+- Updated `extractWeightAndQuantity()` signatures in Amazon, JustForPets, PetsAtHome to accept JSON-LD.
+- Added `tests/Unit/Crawler/Extractors/Sainsburys/SainsburysProductDetailsExtractorTest.php` to cover Sainsbury’s extractor (JSON-LD, DOM fallback, metadata).
+
+**Gotchas**:
+- Retailer slugs and brand config keys differ (e.g. Zooplus uses `zooplus-uk` slug but `zooplus` brand key).
+- Zooplus nutritional info parsing must handle table rows (`.analytical-constituents`) to satisfy existing tests.
+
 ### ✅ Unified Crawler Command (Task f-237d34)
 **Completed**: Consolidated 8 individual crawler commands into a single `crawler:run` command.
 
