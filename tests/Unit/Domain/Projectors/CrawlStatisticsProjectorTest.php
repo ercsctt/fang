@@ -11,7 +11,7 @@ use App\Models\Retailer;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(Illuminate\Foundation\Testing\LazilyRefreshDatabase::class);
 
 describe('crawl started tracking', function () {
     test('increments crawls_started when crawl starts', function () {

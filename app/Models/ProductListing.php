@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Allergen;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -96,6 +97,17 @@ class ProductListing extends Model
     }
 
     /**
+     * @return BelongsToMany<Ingredient, $this>
+     */
+    public function ingredientRelation(): BelongsToMany
+    {
+        return $this->belongsToMany(Ingredient::class, 'product_listing_ingredients')
+            ->withPivot(['position', 'percentage'])
+            ->withTimestamps()
+            ->orderByPivot('position');
+    }
+
+    /**
      * @param  Builder<ProductListing>  $query
      * @return Builder<ProductListing>
      */
@@ -139,6 +151,90 @@ class ProductListing extends Model
     public function scopeByCategory(Builder $query, string $category): Builder
     {
         return $query->where('category', $category);
+    }
+
+    /**
+     * @param  Builder<ProductListing>  $query
+     * @return Builder<ProductListing>
+     */
+    public function scopeWithAllergen(Builder $query, Allergen $allergen): Builder
+    {
+        return $query->whereHas('ingredientRelation', function (Builder $query) use ($allergen) {
+            $query->whereJsonContains('allergens', $allergen->value);
+        });
+    }
+
+    /**
+     * @param  Builder<ProductListing>  $query
+     * @return Builder<ProductListing>
+     */
+    public function scopeWithoutAllergen(Builder $query, Allergen $allergen): Builder
+    {
+        return $query->whereDoesntHave('ingredientRelation', function (Builder $query) use ($allergen) {
+            $query->whereJsonContains('allergens', $allergen->value);
+        });
+    }
+
+    /**
+     * @param  Builder<ProductListing>  $query
+     * @return Builder<ProductListing>
+     */
+    public function scopeGrainFree(Builder $query): Builder
+    {
+        $grainAllergens = [
+            Allergen::Grain,
+            Allergen::Wheat,
+            Allergen::Corn,
+        ];
+
+        return $query->whereDoesntHave('ingredientRelation', function (Builder $query) use ($grainAllergens) {
+            $first = array_shift($grainAllergens);
+
+            if ($first === null) {
+                return;
+            }
+
+            $query->whereJsonContains('allergens', $first->value);
+
+            foreach ($grainAllergens as $allergen) {
+                $query->orWhereJsonContains('allergens', $allergen->value);
+            }
+        });
+    }
+
+    /**
+     * @param  Builder<ProductListing>  $query
+     * @return Builder<ProductListing>
+     */
+    public function scopeSingleProtein(Builder $query): Builder
+    {
+        $proteinAllergens = [
+            Allergen::Chicken,
+            Allergen::Beef,
+            Allergen::Pork,
+            Allergen::Fish,
+            Allergen::Lamb,
+        ];
+
+        return $query->where(function (Builder $query) use ($proteinAllergens) {
+            foreach ($proteinAllergens as $allergen) {
+                $query->orWhere(function (Builder $query) use ($allergen, $proteinAllergens) {
+                    $query->whereHas('ingredientRelation', function (Builder $query) use ($allergen) {
+                        $query->whereJsonContains('allergens', $allergen->value);
+                    });
+
+                    foreach ($proteinAllergens as $otherAllergen) {
+                        if ($otherAllergen === $allergen) {
+                            continue;
+                        }
+
+                        $query->whereDoesntHave('ingredientRelation', function (Builder $query) use ($otherAllergen) {
+                            $query->whereJsonContains('allergens', $otherAllergen->value);
+                        });
+                    }
+                });
+            }
+        });
     }
 
     /**

@@ -10,9 +10,9 @@ use App\Models\Retailer;
 use App\Services\CategoryNormalizer;
 use App\Services\ProductMatcher;
 use App\Services\ProductNormalizer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
-uses(RefreshDatabase::class);
+uses(LazilyRefreshDatabase::class);
 
 function setupMatcher(): array
 {

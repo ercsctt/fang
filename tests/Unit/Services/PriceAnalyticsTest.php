@@ -15,9 +15,9 @@ use App\Models\ProductListingMatch;
 use App\Models\ProductListingPrice;
 use App\Models\Retailer;
 use App\Services\PriceAnalytics;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
-uses(RefreshDatabase::class);
+uses(LazilyRefreshDatabase::class);
 
 function setupPriceAnalytics(): array
 {

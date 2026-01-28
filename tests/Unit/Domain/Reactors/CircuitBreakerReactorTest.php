@@ -6,12 +6,12 @@ use App\Domain\Crawler\Aggregates\CrawlAggregate;
 use App\Domain\Crawler\Reactors\CircuitBreakerReactor;
 use App\Enums\RetailerStatus;
 use App\Models\Retailer;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
+uses(LazilyRefreshDatabase::class);
 
 beforeEach(function () {
     Cache::flush();
