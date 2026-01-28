@@ -4,64 +4,22 @@ declare(strict_types=1);
 
 namespace App\Crawler\Extractors\Amazon;
 
-use App\Crawler\Contracts\ExtractorInterface;
-use App\Crawler\DTOs\ProductReview;
+use App\Crawler\Extractors\Concerns\BaseProductReviewsExtractor;
 use Carbon\Carbon;
+use DateTimeInterface;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
-class AmazonProductReviewsExtractor implements ExtractorInterface
+/**
+ * Amazon product reviews extractor.
+ *
+ * Amazon doesn't typically include reviews in JSON-LD structured data,
+ * so this extractor primarily uses DOM-based extraction with Amazon-specific
+ * selectors and CAPTCHA detection.
+ */
+class AmazonProductReviewsExtractor extends BaseProductReviewsExtractor
 {
-    public function extract(string $html, string $url): Generator
-    {
-        $crawler = new Crawler($html);
-
-        // Check for blocked page
-        if ($this->isBlockedPage($crawler, $html)) {
-            Log::warning("AmazonProductReviewsExtractor: Blocked/CAPTCHA page detected at {$url}");
-
-            return;
-        }
-
-        $reviewCount = 0;
-
-        // Extract reviews from product page review section
-        $reviewSelectors = [
-            '#cm-cr-dp-review-list .review',
-            '#customer_review_foreign .review',
-            '[data-hook="review"]',
-            '.review',
-        ];
-
-        foreach ($reviewSelectors as $selector) {
-            try {
-                $reviews = $crawler->filter($selector);
-                if ($reviews->count() > 0) {
-                    foreach ($reviews as $reviewNode) {
-                        $review = $this->parseReview(new Crawler($reviewNode), $url);
-                        if ($review !== null) {
-                            $reviewCount++;
-                            yield $review;
-                        }
-                    }
-
-                    if ($reviewCount > 0) {
-                        break;
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::debug("AmazonProductReviewsExtractor: Review selector {$selector} failed: {$e->getMessage()}");
-            }
-        }
-
-        // Extract pagination info for metadata
-        $nextPageUrl = $this->extractNextPageUrl($crawler, $url);
-
-        Log::info("AmazonProductReviewsExtractor: Extracted {$reviewCount} reviews from {$url}".
-            ($nextPageUrl ? ' (more pages available)' : ''));
-    }
-
     public function canHandle(string $url): bool
     {
         if (str_contains($url, 'amazon.co.uk')) {
@@ -78,114 +36,136 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
         return false;
     }
 
-    /**
-     * Check if the page is blocked or shows a CAPTCHA.
-     */
-    private function isBlockedPage(Crawler $crawler, string $html): bool
+    protected function getExtractorName(): string
     {
-        if (str_contains($html, 'captcha') || str_contains($html, 'robot check')) {
-            return true;
-        }
+        return 'AmazonProductReviewsExtractor';
+    }
 
-        try {
-            $sorryTitle = $crawler->filter('title');
-            if ($sorryTitle->count() > 0) {
-                $title = strtolower($sorryTitle->text());
-                if (str_contains($title, 'sorry') || str_contains($title, 'robot')) {
-                    return true;
-                }
-            }
-        } catch (\Exception $e) {
-            // Continue
-        }
-
-        return false;
+    protected function getRetailerSlug(): string
+    {
+        return 'amazon-uk';
     }
 
     /**
-     * Parse a single review element into a ProductReview DTO.
+     * Override extract to skip JSON-LD (Amazon doesn't use it for reviews)
+     * and add pagination detection.
      */
-    private function parseReview(Crawler $reviewNode, string $sourceUrl): ?ProductReview
+    public function extract(string $html, string $url): Generator
     {
-        try {
-            // Extract review ID
-            $reviewId = $reviewNode->attr('id')
-                ?? $reviewNode->attr('data-review-id')
-                ?? null;
+        $crawler = new Crawler($html);
 
-            if ($reviewId === null) {
-                // Try to find review ID in child elements
-                $idElement = $reviewNode->filter('[id^="customer_review-"], [id^="review-"]');
-                if ($idElement->count() > 0) {
-                    $reviewId = $idElement->first()->attr('id');
-                }
-            }
+        // Check for blocked page (CAPTCHA, bot detection, etc.)
+        if ($this->isBlockedPage($crawler, $html)) {
+            Log::warning("{$this->getExtractorName()}: Blocked/CAPTCHA page detected at {$url}");
 
-            if ($reviewId === null) {
-                // Generate a hash-based ID as fallback
-                $reviewId = md5($reviewNode->text());
-            }
-
-            // Extract rating (out of 5)
-            $rating = $this->extractRating($reviewNode);
-            if ($rating === null) {
-                Log::debug("AmazonProductReviewsExtractor: Could not extract rating for review {$reviewId}");
-
-                return null;
-            }
-
-            // Extract review body
-            $body = $this->extractReviewBody($reviewNode);
-            if (empty($body)) {
-                Log::debug("AmazonProductReviewsExtractor: Could not extract body for review {$reviewId}");
-
-                return null;
-            }
-
-            // Extract optional fields
-            $author = $this->extractAuthor($reviewNode);
-            $title = $this->extractReviewTitle($reviewNode);
-            $reviewDate = $this->extractReviewDate($reviewNode);
-            $verifiedPurchase = $this->isVerifiedPurchase($reviewNode);
-            $helpfulCount = $this->extractHelpfulCount($reviewNode);
-
-            return new ProductReview(
-                externalId: $reviewId,
-                rating: $rating,
-                author: $author,
-                title: $title,
-                body: $body,
-                verifiedPurchase: $verifiedPurchase,
-                reviewDate: $reviewDate,
-                helpfulCount: $helpfulCount,
-                metadata: [
-                    'source_url' => $sourceUrl,
-                    'extracted_at' => now()->toIso8601String(),
-                    'retailer' => 'amazon-uk',
-                ],
-            );
-        } catch (\Exception $e) {
-            Log::debug("AmazonProductReviewsExtractor: Failed to parse review: {$e->getMessage()}");
-
-            return null;
+            return;
         }
+
+        $reviewsExtracted = 0;
+
+        // Amazon reviews are DOM-based only
+        foreach ($this->extractFromDom($crawler, $url) as $review) {
+            $reviewsExtracted++;
+            yield $review;
+        }
+
+        // Extract pagination info for metadata
+        $nextPageUrl = $this->extractNextPageUrl($crawler);
+
+        Log::info("{$this->getExtractorName()}: Extracted {$reviewsExtracted} reviews from {$url}".
+            ($nextPageUrl ? ' (more pages available)' : ''));
     }
 
-    /**
-     * Extract rating from review element.
-     */
-    private function extractRating(Crawler $reviewNode): ?float
+    protected function getReviewSelectors(): array
     {
-        $selectors = [
+        return [
+            '#cm-cr-dp-review-list .review',
+            '#customer_review_foreign .review',
+            '[data-hook="review"]',
+            '.review',
+        ];
+    }
+
+    protected function getReviewBodySelectors(): array
+    {
+        return [
+            '[data-hook="review-body"] span',
+            '.review-text-content span',
+            '.review-text span',
+            '.review-body',
+            '.reviewText',
+        ];
+    }
+
+    protected function getReviewAuthorSelectors(): array
+    {
+        return [
+            '.a-profile-name',
+            '[data-hook="review-author"] .a-profile-name',
+            '.author',
+            '.reviewer-name',
+        ];
+    }
+
+    protected function getReviewTitleSelectors(): array
+    {
+        return [
+            '[data-hook="review-title"] span:not(.a-icon-alt)',
+            '.review-title-content span',
+            '.review-title span',
+            '.a-text-bold',
+        ];
+    }
+
+    protected function getRatingSelectors(): array
+    {
+        return [
             '[data-hook="review-star-rating"] .a-icon-alt',
             '.review-rating .a-icon-alt',
             '.a-icon-star .a-icon-alt',
             'i[data-hook="review-star-rating"]',
         ];
+    }
 
-        foreach ($selectors as $selector) {
+    protected function getDateSelectors(): array
+    {
+        return [
+            '[data-hook="review-date"]',
+            '.review-date',
+        ];
+    }
+
+    protected function getVerifiedPurchaseSelectors(): array
+    {
+        return [
+            '[data-hook="avp-badge"]',
+            '.avp-badge',
+            '.a-color-state',
+        ];
+    }
+
+    protected function getHelpfulCountSelectors(): array
+    {
+        return [
+            '[data-hook="helpful-vote-statement"]',
+            '.cr-vote-text',
+        ];
+    }
+
+    protected function getFilledStarSelector(): string
+    {
+        return '[class*="a-star-"]';
+    }
+
+    /**
+     * Override to extract rating from Amazon-specific format.
+     */
+    protected function extractRatingFromDom(Crawler $node): ?float
+    {
+        // Try Amazon-specific selectors first
+        foreach ($this->getRatingSelectors() as $selector) {
             try {
-                $element = $reviewNode->filter($selector);
+                $element = $node->filter($selector);
                 if ($element->count() > 0) {
                     $text = $element->first()->text();
                     // Format: "4.0 out of 5 stars" or "4 out of 5 stars"
@@ -200,7 +180,7 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
 
         // Try class-based rating (e.g., a-star-4)
         try {
-            $starIcon = $reviewNode->filter('[class*="a-star-"]');
+            $starIcon = $node->filter('[class*="a-star-"]');
             if ($starIcon->count() > 0) {
                 $classes = $starIcon->first()->attr('class') ?? '';
                 if (preg_match('/a-star-(\d)/i', $classes, $matches)) {
@@ -215,107 +195,13 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract review body text.
+     * Override to extract date from Amazon-specific format.
      */
-    private function extractReviewBody(Crawler $reviewNode): ?string
+    protected function extractDateFromDom(Crawler $node): ?DateTimeInterface
     {
-        $selectors = [
-            '[data-hook="review-body"] span',
-            '.review-text-content span',
-            '.review-text span',
-            '.review-body',
-            '.reviewText',
-        ];
-
-        foreach ($selectors as $selector) {
+        foreach ($this->getDateSelectors() as $selector) {
             try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text) && $text !== 'Read more') {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract review title.
-     */
-    private function extractReviewTitle(Crawler $reviewNode): ?string
-    {
-        $selectors = [
-            '[data-hook="review-title"] span:not(.a-icon-alt)',
-            '.review-title-content span',
-            '.review-title span',
-            '.a-text-bold',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    // Filter out star rating text that might be captured
-                    if (! empty($text) && ! str_contains($text, 'out of 5 stars')) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract author name.
-     */
-    private function extractAuthor(Crawler $reviewNode): ?string
-    {
-        $selectors = [
-            '.a-profile-name',
-            '[data-hook="review-author"] .a-profile-name',
-            '.author',
-            '.reviewer-name',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
-                if ($element->count() > 0) {
-                    $text = trim($element->first()->text());
-                    if (! empty($text)) {
-                        return $text;
-                    }
-                }
-            } catch (\Exception $e) {
-                // Continue
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract review date.
-     */
-    private function extractReviewDate(Crawler $reviewNode): ?\DateTimeInterface
-    {
-        $selectors = [
-            '[data-hook="review-date"]',
-            '.review-date',
-        ];
-
-        foreach ($selectors as $selector) {
-            try {
-                $element = $reviewNode->filter($selector);
+                $element = $node->filter($selector);
                 if ($element->count() > 0) {
                     $text = trim($element->first()->text());
 
@@ -346,19 +232,13 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
     }
 
     /**
-     * Check if review is from a verified purchase.
+     * Override to check for Amazon-specific verified purchase text.
      */
-    private function isVerifiedPurchase(Crawler $reviewNode): bool
+    protected function isVerifiedPurchase(Crawler $node): bool
     {
-        $selectors = [
-            '[data-hook="avp-badge"]',
-            '.avp-badge',
-            '.a-color-state',
-        ];
-
-        foreach ($selectors as $selector) {
+        foreach ($this->getVerifiedPurchaseSelectors() as $selector) {
             try {
-                $element = $reviewNode->filter($selector);
+                $element = $node->filter($selector);
                 if ($element->count() > 0) {
                     $text = strtolower($element->first()->text());
                     if (str_contains($text, 'verified purchase') || str_contains($text, 'verified')) {
@@ -374,19 +254,13 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
     }
 
     /**
-     * Extract helpful vote count.
+     * Override to parse Amazon-specific helpful count format.
      */
-    private function extractHelpfulCount(Crawler $reviewNode): int
+    protected function extractHelpfulCount(Crawler $node): int
     {
-        $selectors = [
-            '[data-hook="helpful-vote-statement"]',
-            '.cr-vote-text',
-            '.a-color-tertiary:contains("helpful")',
-        ];
-
-        foreach ($selectors as $selector) {
+        foreach ($this->getHelpfulCountSelectors() as $selector) {
             try {
-                $element = $reviewNode->filter($selector);
+                $element = $node->filter($selector);
                 if ($element->count() > 0) {
                     $text = strtolower($element->first()->text());
 
@@ -407,9 +281,63 @@ class AmazonProductReviewsExtractor implements ExtractorInterface
     }
 
     /**
+     * Override to filter Amazon review title from star rating text.
+     */
+    protected function extractTextFromSelectors(Crawler $node, array $selectors): ?string
+    {
+        foreach ($selectors as $selector) {
+            try {
+                $element = $node->filter($selector);
+                if ($element->count() > 0) {
+                    $text = trim($element->first()->text());
+                    // Filter out star rating text and "Read more" text
+                    if (! empty($text) && ! str_contains($text, 'out of 5 stars') && $text !== 'Read more') {
+                        return $text;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Continue
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Override to check for Amazon-specific review ID patterns.
+     */
+    protected function extractExternalIdFromDom(Crawler $node): ?string
+    {
+        $id = $node->attr('id')
+            ?? $node->attr('data-review-id')
+            ?? null;
+
+        if ($id !== null) {
+            return $id;
+        }
+
+        // Try to find review ID in child elements
+        try {
+            $idElement = $node->filter('[id^="customer_review-"], [id^="review-"]');
+            if ($idElement->count() > 0) {
+                return $idElement->first()->attr('id');
+            }
+        } catch (\Exception $e) {
+            // Continue
+        }
+
+        // Generate a hash-based ID as fallback
+        try {
+            return md5($node->text());
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
      * Extract next page URL for review pagination.
      */
-    private function extractNextPageUrl(Crawler $crawler, string $currentUrl): ?string
+    private function extractNextPageUrl(Crawler $crawler): ?string
     {
         try {
             // Look for "Next page" link in reviews section
