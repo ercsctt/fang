@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\CrawlMonitoringController;
+use App\Http\Controllers\Admin\ProductVerificationController;
 use App\Http\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -31,6 +32,23 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
         ->name('admin.crawl-monitoring.jobs.delete');
     Route::post('/crawl-monitoring/jobs/retry-all', [CrawlMonitoringController::class, 'retryAllJobs'])
         ->name('admin.crawl-monitoring.jobs.retry-all');
+
+    Route::prefix('product-verification')->group(function () {
+        Route::get('/', [ProductVerificationController::class, 'index'])
+            ->name('admin.product-verification.index');
+        Route::get('/stats', [ProductVerificationController::class, 'stats'])
+            ->name('admin.product-verification.stats');
+        Route::get('/{match}', [ProductVerificationController::class, 'show'])
+            ->name('admin.product-verification.show');
+        Route::post('/{match}/approve', [ProductVerificationController::class, 'approve'])
+            ->name('admin.product-verification.approve');
+        Route::post('/{match}/reject', [ProductVerificationController::class, 'reject'])
+            ->name('admin.product-verification.reject');
+        Route::post('/{match}/rematch', [ProductVerificationController::class, 'rematch'])
+            ->name('admin.product-verification.rematch');
+        Route::post('/bulk-approve', [ProductVerificationController::class, 'bulkApprove'])
+            ->name('admin.product-verification.bulk-approve');
+    });
 });
 
 require __DIR__.'/settings.php';

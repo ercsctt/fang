@@ -46,3 +46,20 @@ Schedule::command('crawler:dispatch-all --delay=300')
 //     ->onOneServer()
 //     ->appendOutputTo(storage_path('logs/crawler-reviews.log'))
 //     ->description('Weekly product review scraping');
+
+/*
+|--------------------------------------------------------------------------
+| Image Cleanup (Daily)
+|--------------------------------------------------------------------------
+|
+| Cleanup orphaned images that haven't been accessed in 30+ days.
+| Runs daily at 4 AM UK time to avoid peak hours and after crawlers.
+|
+*/
+
+Schedule::job(new \App\Jobs\CleanupOrphanedImagesJob(daysOld: 30))
+    ->dailyAt('04:00')
+    ->timezone('Europe/London')
+    ->onOneServer()
+    ->appendOutputTo(storage_path('logs/image-cleanup.log'))
+    ->description('Daily cleanup of orphaned images not accessed in 30+ days');
