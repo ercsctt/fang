@@ -43,5 +43,12 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Added `flex-wrap` to badge container to handle multiple badges gracefully
 - Status mapping: active->healthy, paused->paused (separate), degraded->degraded, disabled/failed->unhealthy
 
+### Task f-fd1ede: Fix sidebar footer navigation links
+- Removed the `footerNavItems` array which contained links to Laravel starter kit defaults
+- Removed the `NavFooter` component import and usage from the sidebar
+- Removed unused icon imports (`BookOpen`, `Folder`) from lucide-vue-next
+- Decision: Opted to remove the footer nav entirely rather than replace with project docs, as this is an internal admin tool
+- The `NavUser` component remains in the sidebar footer for user account access
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

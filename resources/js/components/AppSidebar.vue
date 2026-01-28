@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
 import {
@@ -11,10 +10,17 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, scraperTester } from '@/routes';
+import admin from '@/routes/admin';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/vue3';
-import { Activity, BookOpen, Folder, Globe, LayoutGrid } from 'lucide-vue-next';
+import {
+    Activity,
+    CheckCircle,
+    Globe,
+    LayoutGrid,
+    Store,
+} from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 
 const mainNavItems: NavItem[] = [
@@ -24,27 +30,24 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
     {
+        title: 'Retailers Management',
+        href: admin.retailers.index(),
+        icon: Store,
+    },
+    {
+        title: 'Product Verification',
+        href: admin.productVerification.index(),
+        icon: CheckCircle,
+    },
+    {
         title: 'Crawl Monitoring',
-        href: '/admin/crawl-monitoring',
+        href: admin.crawlMonitoring(),
         icon: Activity,
     },
     {
         title: 'Scraper Tester',
-        href: '/scraper-tester',
+        href: scraperTester(),
         icon: Globe,
-    },
-];
-
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Github Repo',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: Folder,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
     },
 ];
 </script>
@@ -68,7 +71,6 @@ const footerNavItems: NavItem[] = [
         </SidebarContent>
 
         <SidebarFooter>
-            <NavFooter :items="footerNavItems" />
             <NavUser />
         </SidebarFooter>
     </Sidebar>
