@@ -18,6 +18,15 @@ import {
 import AppLayout from '@/layouts/AppLayout.vue';
 import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
+import type {
+    ChartData,
+    CrawlStatistic,
+    DataFreshnessStats,
+    FailedJob,
+    MatchingStats,
+    RetailerHealth,
+    TodayStats,
+} from '@/types/admin';
 import { Head, router } from '@inertiajs/vue3';
 import {
     Activity,
@@ -35,82 +44,6 @@ import DataFreshnessCard from './components/DataFreshnessCard.vue';
 import FailedJobsTable from './components/FailedJobsTable.vue';
 import MatchingStatsCard from './components/MatchingStatsCard.vue';
 import RetailerHealthTable from './components/RetailerHealthTable.vue';
-
-interface RetailerHealth {
-    id: number;
-    name: string;
-    slug: string;
-    status: 'active' | 'paused' | 'disabled' | 'degraded' | 'failed';
-    status_label: string;
-    status_color: string;
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    paused_until: string | null;
-    last_crawled_at: string | null;
-    is_paused: boolean;
-    is_available_for_crawling: boolean;
-    product_listings_count: number;
-}
-
-interface CrawlStatistic {
-    id: number;
-    retailer_id: number;
-    retailer_name: string | null;
-    retailer_slug: string | null;
-    date: string;
-    crawls_started: number;
-    crawls_completed: number;
-    crawls_failed: number;
-    listings_discovered: number;
-    details_extracted: number;
-    average_duration_ms: number | null;
-    success_rate: number | null;
-}
-
-interface TodayStats {
-    crawls_started: number;
-    crawls_completed: number;
-    crawls_failed: number;
-    listings_discovered: number;
-    details_extracted: number;
-    success_rate: number | null;
-}
-
-interface MatchingStats {
-    exact: number;
-    fuzzy: number;
-    barcode: number;
-    manual: number;
-    unmatched: number;
-    total_listings: number;
-}
-
-interface DataFreshnessStats {
-    fresh: number;
-    stale_24h: number;
-    stale_48h: number;
-    stale_week: number;
-    never_scraped: number;
-    total: number;
-}
-
-interface FailedJob {
-    id: number;
-    uuid: string;
-    queue: string;
-    payload_summary: string;
-    exception_summary: string;
-    failed_at: string;
-}
-
-interface ChartData {
-    labels: string[];
-    datasets: {
-        crawls: number[];
-        listings: number[];
-        failures: number[];
-    };
-}
 
 interface Props {
     retailers: RetailerHealth[];

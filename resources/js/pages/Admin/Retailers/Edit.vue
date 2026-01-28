@@ -24,6 +24,13 @@ import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/AppLayout.vue';
 import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
+import type {
+    CrawlerClass,
+    FailureHistory,
+    RetailerEditData,
+    RetailerStatistics,
+    StatusOption,
+} from '@/types/admin';
 import { Form, Head, Link, usePage } from '@inertiajs/vue3';
 import {
     AlertTriangle,
@@ -38,76 +45,11 @@ import {
 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
-interface CrawlerClass {
-    value: string;
-    label: string;
-}
-
-interface Status {
-    value: string;
-    label: string;
-    color: string;
-}
-
-interface DailyStat {
-    date: string;
-    crawls_started: number;
-    crawls_completed: number;
-    crawls_failed: number;
-    listings_discovered: number;
-    details_extracted: number;
-    success_rate: number | null;
-}
-
-interface Statistics {
-    product_count: number;
-    last_crawled_at: string | null;
-    last_seven_days: {
-        crawls_started: number;
-        crawls_completed: number;
-        crawls_failed: number;
-        listings_discovered: number;
-        details_extracted: number;
-    };
-    success_rate: number | null;
-    daily_stats: DailyStat[];
-}
-
-interface FailureHistory {
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    recent_failure_dates: string[];
-    total_failures_last_30_days: number;
-}
-
-interface Retailer {
-    id: number;
-    name: string;
-    slug: string;
-    base_url: string;
-    crawler_class: string | null;
-    rate_limit_ms: number;
-    status: string;
-    status_label: string;
-    status_color: string;
-    status_description: string;
-    status_badge_classes: string;
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    paused_until: string | null;
-    last_crawled_at: string | null;
-    is_paused: boolean;
-    is_available_for_crawling: boolean;
-    product_listings_count: number;
-    created_at: string | null;
-    updated_at: string | null;
-}
-
 interface Props {
-    retailer: Retailer;
+    retailer: RetailerEditData;
     crawlerClasses: CrawlerClass[];
-    statuses: Status[];
-    statistics: Statistics;
+    statuses: StatusOption[];
+    statistics: RetailerStatistics;
     failureHistory: FailureHistory;
 }
 

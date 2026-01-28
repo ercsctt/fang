@@ -10,6 +10,11 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import admin from '@/routes/admin';
+import type {
+    Match,
+    PaginatedMatches,
+    VerificationFilters,
+} from '@/types/admin';
 import { router } from '@inertiajs/vue3';
 import {
     ArrowUpDown,
@@ -20,71 +25,9 @@ import {
     XCircle,
 } from 'lucide-vue-next';
 
-interface Product {
-    id: number;
-    name: string;
-    slug: string;
-    brand: string | null;
-    primary_image: string | null;
-    weight_grams: number | null;
-    quantity: number | null;
-}
-
-interface Retailer {
-    id: number;
-    name: string;
-    slug: string;
-}
-
-interface ProductListing {
-    id: number;
-    retailer_id: number;
-    title: string;
-    brand: string | null;
-    url: string;
-    price_pence: number | null;
-    images: string[] | null;
-    weight_grams: number | null;
-    quantity: number | null;
-    retailer: Retailer;
-}
-
-interface Verifier {
-    id: number;
-    name: string;
-}
-
-interface Match {
-    id: number;
-    product_id: number;
-    product_listing_id: number;
-    confidence_score: number;
-    match_type: string;
-    matched_at: string;
-    verified_at: string | null;
-    status: string;
-    rejection_reason: string | null;
-    product: Product;
-    product_listing: ProductListing;
-    verifier: Verifier | null;
-}
-
-interface PaginatedMatches {
-    data: Match[];
-    current_page: number;
-    last_page: number;
-    per_page: number;
-    total: number;
-    links: { url: string | null; label: string; active: boolean }[];
-}
-
 interface Props {
     matches: PaginatedMatches;
-    filters: {
-        status: string;
-        sort: string;
-        direction: string;
-    };
+    filters: VerificationFilters;
 }
 
 const props = defineProps<Props>();

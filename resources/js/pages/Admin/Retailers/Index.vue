@@ -19,6 +19,13 @@ import {
 import AppLayout from '@/layouts/AppLayout.vue';
 import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
+import type {
+    RetailerData,
+    RetailerFilters,
+    RetailerSummaryStats,
+    StatusCounts,
+    StatusOption,
+} from '@/types/admin';
 import { Head, router } from '@inertiajs/vue3';
 import {
     AlertTriangle,
@@ -32,66 +39,11 @@ import {
 import { computed, ref, watch } from 'vue';
 import RetailerTable from './components/RetailerTable.vue';
 
-interface RetailerData {
-    id: number;
-    name: string;
-    slug: string;
-    base_url: string;
-    status: string;
-    status_label: string;
-    status_color: string;
-    status_description: string;
-    status_badge_classes: string;
-    status_icon: string;
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    paused_until: string | null;
-    last_crawled_at: string | null;
-    is_paused: boolean;
-    is_available_for_crawling: boolean;
-    product_listings_count: number;
-    can_pause: boolean;
-    can_resume: boolean;
-    can_disable: boolean;
-    can_enable: boolean;
-}
-
-interface StatusOption {
-    value: string;
-    label: string;
-    color: string;
-}
-
-interface StatusCounts {
-    all: number;
-    active: number;
-    paused: number;
-    disabled: number;
-    degraded: number;
-    failed: number;
-    [key: string]: number;
-}
-
-interface SummaryStats {
-    total: number;
-    crawlable: number;
-    with_problems: number;
-    recently_crawled: number;
-    total_products: number;
-}
-
-interface Filters {
-    status: string;
-    search: string;
-    sort: string;
-    dir: string;
-}
-
 interface Props {
     retailers: RetailerData[];
     statusCounts: StatusCounts;
-    summaryStats: SummaryStats;
-    filters: Filters;
+    summaryStats: RetailerSummaryStats;
+    filters: RetailerFilters;
     statuses: StatusOption[];
 }
 
@@ -137,7 +89,7 @@ function changeSort(field: string) {
     applyFilters({ sort: sortField.value, dir: sortDirection.value });
 }
 
-function applyFilters(overrides: Partial<Filters> = {}) {
+function applyFilters(overrides: Partial<RetailerFilters> = {}) {
     const params: Record<string, string> = {
         status: selectedStatus.value,
         search: searchQuery.value,

@@ -31,6 +31,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import type { RetailerData } from '@/types/admin';
 import {
     AlertTriangle,
     ArrowDown,
@@ -48,30 +49,6 @@ import {
     XCircle,
 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
-
-interface RetailerData {
-    id: number;
-    name: string;
-    slug: string;
-    base_url: string;
-    status: string;
-    status_label: string;
-    status_color: string;
-    status_description: string;
-    status_badge_classes: string;
-    status_icon: string;
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    paused_until: string | null;
-    last_crawled_at: string | null;
-    is_paused: boolean;
-    is_available_for_crawling: boolean;
-    product_listings_count: number;
-    can_pause: boolean;
-    can_resume: boolean;
-    can_disable: boolean;
-    can_enable: boolean;
-}
 
 interface Props {
     retailers: RetailerData[];

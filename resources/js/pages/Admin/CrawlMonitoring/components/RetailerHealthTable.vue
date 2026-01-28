@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge } from '@/components/ui/badge';
+import type { RetailerHealth } from '@/types/admin';
 import {
     AlertTriangle,
     CheckCircle2,
@@ -9,22 +10,6 @@ import {
     XCircle,
 } from 'lucide-vue-next';
 import { computed } from 'vue';
-
-interface RetailerHealth {
-    id: number;
-    name: string;
-    slug: string;
-    status: 'active' | 'paused' | 'disabled' | 'degraded' | 'failed';
-    status_label: string;
-    status_color: string;
-    consecutive_failures: number;
-    last_failure_at: string | null;
-    paused_until: string | null;
-    last_crawled_at: string | null;
-    is_paused: boolean;
-    is_available_for_crawling: boolean;
-    product_listings_count: number;
-}
 
 interface Props {
     retailers: RetailerHealth[];

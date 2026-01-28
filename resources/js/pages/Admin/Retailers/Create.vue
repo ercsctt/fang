@@ -22,24 +22,14 @@ import {
 import AppLayout from '@/layouts/AppLayout.vue';
 import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
+import type { CrawlerClass, StatusOption } from '@/types/admin';
 import { Form, Head, Link } from '@inertiajs/vue3';
 import { ArrowLeft } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 
-interface CrawlerClass {
-    value: string;
-    label: string;
-}
-
-interface Status {
-    value: string;
-    label: string;
-    color: string;
-}
-
 interface Props {
     crawlerClasses: CrawlerClass[];
-    statuses: Status[];
+    statuses: StatusOption[];
     defaultStatus: string;
 }
 

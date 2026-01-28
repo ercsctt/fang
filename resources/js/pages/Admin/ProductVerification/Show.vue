@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/AppLayout.vue';
 import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
+import type { MatchDetail, OtherMatch, SuggestedProduct } from '@/types/admin';
 import { Head, router } from '@inertiajs/vue3';
 import {
     ArrowLeft,
@@ -25,86 +26,8 @@ import {
 import { computed, ref } from 'vue';
 import ProductComparisonCard from './components/ProductComparisonCard.vue';
 
-interface Product {
-    id: number;
-    name: string;
-    slug: string;
-    brand: string | null;
-    description: string | null;
-    primary_image: string | null;
-    weight_grams: number | null;
-    quantity: number | null;
-    category: string | null;
-    subcategory: string | null;
-}
-
-interface Retailer {
-    id: number;
-    name: string;
-    slug: string;
-}
-
-interface ProductListing {
-    id: number;
-    retailer_id: number;
-    title: string;
-    brand: string | null;
-    description: string | null;
-    url: string;
-    price_pence: number | null;
-    images: string[] | null;
-    weight_grams: number | null;
-    quantity: number | null;
-    category: string | null;
-    ingredients: string | null;
-    retailer: Retailer;
-}
-
-interface Verifier {
-    id: number;
-    name: string;
-}
-
-interface Match {
-    id: number;
-    product_id: number;
-    product_listing_id: number;
-    confidence_score: number;
-    match_type: string;
-    matched_at: string;
-    verified_at: string | null;
-    status: string;
-    rejection_reason: string | null;
-    product: Product;
-    product_listing: ProductListing;
-    verifier: Verifier | null;
-}
-
-interface OtherMatch {
-    id: number;
-    product_listing: {
-        id: number;
-        retailer_id: number;
-        title: string;
-        url: string;
-        price_pence: number | null;
-        retailer: {
-            id: number;
-            name: string;
-        };
-    };
-}
-
-interface SuggestedProduct {
-    id: number;
-    name: string;
-    slug: string;
-    brand: string | null;
-    primary_image: string | null;
-}
-
 interface Props {
-    match: Match;
+    match: MatchDetail;
     otherMatches: OtherMatch[];
     suggestedProducts: SuggestedProduct[];
 }

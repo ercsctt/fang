@@ -166,5 +166,78 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Uses `Retailer::factory()`, `Product::factory()`, and `ProductListing::factory()` to create related test data
 - **Note**: Browser tests require development server to be running (`npm run dev` or `composer run dev`) and built frontend assets (`npm run build`)
 
+### Task f-9393c4: Update TypeScript interfaces for admin pages
+- Created `resources/js/types/admin.ts` - A centralized shared types file for all admin page TypeScript interfaces
+- This consolidates previously duplicated interface definitions across multiple Vue components
+- Interfaces aligned with backend controller responses from:
+  - `App\Http\Controllers\Admin\CrawlMonitoringController`
+  - `App\Http\Controllers\Admin\RetailerController`
+  - `App\Http\Controllers\Admin\ProductVerificationController`
+
+**Files updated to use shared types:**
+- `resources/js/pages/Admin/CrawlMonitoring/Index.vue` - Imports `RetailerHealth`, `CrawlStatistic`, `TodayStats`, `MatchingStats`, `DataFreshnessStats`, `FailedJob`, `ChartData`
+- `resources/js/pages/Admin/CrawlMonitoring/components/RetailerHealthTable.vue` - Imports `RetailerHealth`
+- `resources/js/pages/Admin/Retailers/Index.vue` - Imports `RetailerData`, `StatusCounts`, `RetailerSummaryStats`, `RetailerFilters`, `StatusOption`
+- `resources/js/pages/Admin/Retailers/components/RetailerTable.vue` - Imports `RetailerData`
+- `resources/js/pages/Admin/Retailers/Create.vue` - Imports `CrawlerClass`, `StatusOption`
+- `resources/js/pages/Admin/Retailers/Edit.vue` - Imports `CrawlerClass`, `StatusOption`, `RetailerEditData`, `RetailerStatistics`, `FailureHistory`
+- `resources/js/pages/Admin/ProductVerification/Index.vue` - Imports `PaginatedMatches`, `VerificationStats`, `VerificationFilters`
+- `resources/js/pages/Admin/ProductVerification/Show.vue` - Imports `MatchDetail`, `OtherMatch`, `SuggestedProduct`
+- `resources/js/pages/Admin/ProductVerification/components/VerificationTable.vue` - Imports `Match`, `PaginatedMatches`, `VerificationFilters`
+
+**Key patterns established:**
+- All admin interfaces should be defined in `@/types/admin.ts` and imported where needed
+- Interface names follow the pattern: `{Entity}{Context}` (e.g., `RetailerHealth`, `RetailerEditData`, `VerificationStats`)
+- Status value types use union types matching PHP enums (e.g., `RetailerStatusValue = 'active' | 'paused' | 'disabled' | 'degraded' | 'failed'`)
+- Nested objects use dedicated interfaces (e.g., `VerificationRetailer`, `VerificationProductListing`)
+- Pagination responses use `PaginatedMatches` interface with standard Laravel pagination fields
+
+**Gotchas:**
+- When adding new admin pages, always check backend controller responses and add corresponding interfaces to `admin.ts`
+- Props interfaces in Vue components should reference shared types, not redefine them locally
+- TypeScript's `vue-tsc` must pass after changes - run `npx vue-tsc --noEmit` to verify
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
+
+### `resources/js/types/admin.ts`
+Shared TypeScript interfaces for admin pages:
+
+**Retailer Status Types:**
+- `RetailerStatusValue` - Union type for retailer status enum values
+- `StatusOption` - Status option for dropdown filters
+
+**Retailer Types:**
+- `RetailerHealth` - Retailer health data for Crawl Monitoring dashboard
+- `RetailerData` - Full retailer data for Retailers Index page
+- `RetailerEditData` - Retailer data for Edit page
+- `CrawlerClass` - Crawler class option for forms
+- `StatusCounts` - Retailer status counts for filtering
+- `RetailerSummaryStats` - Summary statistics for retailers
+- `RetailerFilters` - Retailer filters for index page
+
+**Crawl Statistics Types:**
+- `CrawlStatistic` - Daily crawl statistic record
+- `TodayStats` - Today's aggregated stats
+- `MatchingStats` - Matching statistics by type
+- `DataFreshnessStats` - Data freshness statistics
+- `FailedJob` - Failed job record
+- `ChartData` - Chart data for crawl activity visualization
+- `DailyStat` - Daily stats for retailer edit page
+- `RetailerStatistics` - Retailer statistics for edit page
+- `FailureHistory` - Failure history for retailer edit page
+
+**Product Verification Types:**
+- `VerificationRetailer` - Simplified retailer for product verification
+- `VerificationProduct` - Product for verification display
+- `VerificationProductDetail` - Extended product for verification detail page
+- `VerificationProductListing` - Product listing for verification display
+- `VerificationProductListingDetail` - Extended product listing for verification detail page
+- `Verifier` - User who verified a match
+- `Match` - Product listing match for verification
+- `MatchDetail` - Match for detail page with extended product info
+- `OtherMatch` - Other match for same product
+- `SuggestedProduct` - Suggested product for rematch
+- `PaginatedMatches` - Paginated matches response
+- `VerificationStats` - Verification statistics
+- `VerificationFilters` - Verification page filters
