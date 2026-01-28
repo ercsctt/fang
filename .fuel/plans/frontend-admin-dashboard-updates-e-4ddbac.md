@@ -145,5 +145,26 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Individual tests provide granular failure reporting when debugging specific page issues
 - **Note**: Browser tests require development server to be running (`npm run dev` or `composer run dev`)
 
+### Task f-eafbc9: Add browser tests for Product Verification
+- Created `tests/Browser/Admin/ProductVerificationTest.php` with Pest v4 browser tests
+- Tests cover:
+  1. `verification index page loads` - Verifies index page renders with title, description, and verification queue
+  2. `verification stats display correct counts` - Verifies KPI cards show correct counts for pending, approved, rejected, and high confidence matches
+  3. `verification table displays matches` - Verifies match queue renders with listing titles, product names, retailers, confidence scores
+  4. `status filter works` - Tests pending/approved/rejected/all filter dropdown functionality
+  5. `verification show page loads` - Verifies single match detail page renders with match info
+  6. `match can be approved` - Tests approve button functionality and database update
+  7. `match can be rejected with reason` - Tests reject button with reason textarea and database update
+  8. `bulk approve high confidence matches` - Tests bulk approve button for high confidence matches
+  9. `pagination works` - Verifies pagination controls function correctly
+  10. `quick approve from table works` - Tests inline approve icon button in table row
+  11. `quick reject from table works` - Tests inline reject icon button in table row
+  12. `clicking table row navigates to show page` - Tests view details button navigation
+  13. `show page displays match details correctly` - Verifies match type, dates, and comparison cards render
+- Pattern: Login flow uses `visit('/login')` → `fill('email', ...)` → `fill('password', ...)` → `click('[data-test="login-button"]')` → `waitForUrl('/dashboard')` → `navigate($url)`
+- Test data setup: Uses `ProductListingMatch::factory()->pending()->for($product)->create([...])` with various factory states (highConfidence, approved, rejected, fuzzy, exact)
+- Uses `Retailer::factory()`, `Product::factory()`, and `ProductListing::factory()` to create related test data
+- **Note**: Browser tests require development server to be running (`npm run dev` or `composer run dev`) and built frontend assets (`npm run build`)
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
