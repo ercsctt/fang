@@ -128,5 +128,22 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
   - Ensure `npx playwright install chromium` has been run
   - May need to configure `APP_ENV=testing` with persistent database
 
+### Task f-e3dad3: Add smoke tests for admin pages
+- Created `tests/Browser/Admin/SmokeTest.php` with Pest v4 smoke tests
+- Tests cover all admin pages:
+  1. `all admin pages load without javascript errors` - Comprehensive test that visits all 4 admin URLs in sequence
+  2. `admin pages smoke test - retailers` - Individual smoke test for `/admin/retailers`
+  3. `admin pages smoke test - retailers create` - Individual smoke test for `/admin/retailers/create`
+  4. `admin pages smoke test - crawl monitoring` - Individual smoke test for `/admin/crawl-monitoring`
+  5. `admin pages smoke test - product verification` - Individual smoke test for `/admin/product-verification`
+- Pattern: Follows existing browser test patterns in the codebase:
+  - Uses `beforeEach` to create test user with `User::factory()->create()` and `Hash::make('password')`
+  - Login flow: `visit('/login')` → `fill('#email', ...)` → `fill('#password', ...)` → `click('[data-test="login-button"]')` → `assertSee('Dashboard')`
+  - Navigation: `navigate($url)` → `assertSee($expectedText)`
+  - Smoke assertions: `assertNoJavascriptErrors()` and `assertNoConsoleLogs()` on each page
+- The comprehensive test provides a quick way to verify all admin pages load without errors in a single test run
+- Individual tests provide granular failure reporting when debugging specific page issues
+- **Note**: Browser tests require development server to be running (`npm run dev` or `composer run dev`)
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
