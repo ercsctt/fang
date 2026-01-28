@@ -8,6 +8,7 @@ use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Extractors\Concerns\ExtractsPagination;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
@@ -15,6 +16,7 @@ use Symfony\Component\DomCrawler\Crawler;
 class OcadoProductListingUrlExtractor implements ExtractorInterface
 {
     use ExtractsPagination;
+    use NormalizesUrls;
 
     public function extract(string $html, string $url): Generator
     {
@@ -111,30 +113,6 @@ class OcadoProductListingUrlExtractor implements ExtractorInterface
         }
 
         return false;
-    }
-
-    private function normalizeUrl(string $url, string $baseUrl): string
-    {
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        $parsedBase = parse_url($baseUrl);
-        $scheme = $parsedBase['scheme'] ?? 'https';
-        $host = $parsedBase['host'] ?? 'www.ocado.com';
-
-        if (str_starts_with($url, '//')) {
-            return $scheme.':'.$url;
-        }
-
-        if (str_starts_with($url, '/')) {
-            return "{$scheme}://{$host}{$url}";
-        }
-
-        $path = $parsedBase['path'] ?? '';
-        $basePath = substr($path, 0, strrpos($path, '/') + 1);
-
-        return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
     private function isProductUrl(string $url): bool

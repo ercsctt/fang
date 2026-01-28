@@ -5,13 +5,32 @@ declare(strict_types=1);
 namespace App\Crawler\Extractors\Amazon;
 
 use App\Crawler\Contracts\ExtractorInterface;
+use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\ExtractsPagination;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class AmazonProductListingUrlExtractor implements ExtractorInterface
 {
+    use ExtractsPagination;
+    use NormalizesUrls;
+
+    public function __construct()
+    {
+        // Amazon-specific pagination selectors (override trait defaults)
+        $this->nextPageSelectors = [
+            'a.s-pagination-next',
+            'a[aria-label="Go to next page"]',
+            'a[aria-label*="Next"]',
+            'a[aria-label*="next"]',
+            '.a-pagination .a-last a',
+            'a[rel="next"]',
+        ];
+    }
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -59,6 +78,21 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
         }
 
         Log::info('AmazonProductListingUrlExtractor: Extracted '.count($processedAsins)." product ASINs from {$url}");
+
+        // Extract pagination
+        $nextPageUrl = $this->findNextPageLink($crawler, $url);
+        if ($nextPageUrl !== null) {
+            $nextPage = $this->extractPageNumberFromUrl($nextPageUrl);
+            Log::debug("AmazonProductListingUrlExtractor: Found next page URL: {$nextPageUrl} (page {$nextPage})");
+
+            yield new PaginatedUrl(
+                url: $nextPageUrl,
+                retailer: 'amazon-uk',
+                page: $nextPage,
+                category: $this->extractCategory($url),
+                discoveredFrom: $url,
+            );
+        }
     }
 
     public function canHandle(string $url): bool
@@ -142,5 +176,25 @@ class AmazonProductListingUrlExtractor implements ExtractorInterface
         }
 
         return null;
+    }
+
+    /**
+     * Normalize a pagination URL to absolute form.
+     */
+    protected function normalizePageUrl(string $href, string $baseUrl): string
+    {
+        return $this->normalizeUrl($href, $baseUrl);
+    }
+
+    /**
+     * Extract page number from a pagination URL.
+     */
+    private function extractPageNumberFromUrl(string $url): int
+    {
+        if (preg_match('/[?&]page=(\d+)/i', $url, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return 2; // Default to page 2 if we can't parse
     }
 }

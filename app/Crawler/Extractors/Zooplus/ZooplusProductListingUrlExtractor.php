@@ -6,12 +6,15 @@ namespace App\Crawler\Extractors\Zooplus;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class ZooplusProductListingUrlExtractor implements ExtractorInterface
 {
+    use NormalizesUrls;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -59,30 +62,6 @@ class ZooplusProductListingUrlExtractor implements ExtractorInterface
         // Only handle category/listing pages, not product pages
         return str_contains($url, 'zooplus.co.uk')
             && ! $this->isProductUrl($url);
-    }
-
-    private function normalizeUrl(string $url, string $baseUrl): string
-    {
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        $parsedBase = parse_url($baseUrl);
-        $scheme = $parsedBase['scheme'] ?? 'https';
-        $host = $parsedBase['host'] ?? 'www.zooplus.co.uk';
-
-        if (str_starts_with($url, '//')) {
-            return $scheme.':'.$url;
-        }
-
-        if (str_starts_with($url, '/')) {
-            return "{$scheme}://{$host}{$url}";
-        }
-
-        $path = $parsedBase['path'] ?? '';
-        $basePath = substr($path, 0, strrpos($path, '/') + 1);
-
-        return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
     private function isProductUrl(string $url): bool

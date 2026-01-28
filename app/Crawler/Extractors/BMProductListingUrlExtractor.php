@@ -6,12 +6,15 @@ namespace App\Crawler\Extractors;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class BMProductListingUrlExtractor implements ExtractorInterface
 {
+    use NormalizesUrls;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -61,37 +64,6 @@ class BMProductListingUrlExtractor implements ExtractorInterface
         $host = parse_url($url, PHP_URL_HOST);
 
         return $host === 'bmstores.co.uk' || $host === 'www.bmstores.co.uk';
-    }
-
-    /**
-     * Normalize a URL to absolute format.
-     */
-    private function normalizeUrl(string $url, string $baseUrl): string
-    {
-        // Already absolute URL
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        $parsedBase = parse_url($baseUrl);
-        $scheme = $parsedBase['scheme'] ?? 'https';
-        $host = $parsedBase['host'] ?? '';
-
-        // Protocol-relative URL
-        if (str_starts_with($url, '//')) {
-            return $scheme.':'.$url;
-        }
-
-        // Absolute path
-        if (str_starts_with($url, '/')) {
-            return "{$scheme}://{$host}{$url}";
-        }
-
-        // Relative path
-        $path = $parsedBase['path'] ?? '';
-        $basePath = substr($path, 0, strrpos($path, '/') + 1);
-
-        return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
     /**

@@ -6,12 +6,15 @@ namespace App\Crawler\Extractors\Asda;
 
 use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class AsdaProductListingUrlExtractor implements ExtractorInterface
 {
+    use NormalizesUrls;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -179,20 +182,12 @@ class AsdaProductListingUrlExtractor implements ExtractorInterface
      */
     private function normalizeProductUrl(string $url): string
     {
-        // If it's already a full URL, use it
-        if (str_starts_with($url, 'https://')) {
-            // Remove query parameters and fragments
-            $cleanUrl = preg_replace('/[?#].*$/', '', $url);
+        $normalizedUrl = $this->normalizeUrl($url, 'https://groceries.asda.com/');
 
-            return $cleanUrl ?? $url;
-        }
+        // Remove query parameters and fragments
+        $cleanUrl = preg_replace('/[?#].*$/', '', $normalizedUrl);
 
-        // If it's a relative URL, make it absolute
-        if (str_starts_with($url, '/')) {
-            return 'https://groceries.asda.com'.$url;
-        }
-
-        return $url;
+        return $cleanUrl ?? $normalizedUrl;
     }
 
     /**

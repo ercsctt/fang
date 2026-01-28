@@ -5,13 +5,19 @@ declare(strict_types=1);
 namespace App\Crawler\Extractors\PetsAtHome;
 
 use App\Crawler\Contracts\ExtractorInterface;
+use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
+use App\Crawler\Extractors\Concerns\ExtractsPagination;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
 
 class PAHProductListingUrlExtractor implements ExtractorInterface
 {
+    use ExtractsPagination;
+    use NormalizesUrls;
+
     public function extract(string $html, string $url): Generator
     {
         $crawler = new Crawler($html);
@@ -51,35 +57,26 @@ class PAHProductListingUrlExtractor implements ExtractorInterface
         }
 
         Log::info('PAHProductListingUrlExtractor: Extracted '.count($processedUrls)." product listing URLs from {$url}");
+
+        // Extract pagination
+        $nextPageUrl = $this->findNextPageLink($crawler, $url);
+        if ($nextPageUrl !== null) {
+            $nextPage = $this->extractPageNumberFromUrl($nextPageUrl);
+            Log::debug("PAHProductListingUrlExtractor: Found next page URL: {$nextPageUrl} (page {$nextPage})");
+
+            yield new PaginatedUrl(
+                url: $nextPageUrl,
+                retailer: 'pets-at-home',
+                page: $nextPage,
+                category: $this->extractCategory($url),
+                discoveredFrom: $url,
+            );
+        }
     }
 
     public function canHandle(string $url): bool
     {
         return str_contains($url, 'petsathome.com');
-    }
-
-    private function normalizeUrl(string $url, string $baseUrl): string
-    {
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        $parsedBase = parse_url($baseUrl);
-        $scheme = $parsedBase['scheme'] ?? 'https';
-        $host = $parsedBase['host'] ?? 'www.petsathome.com';
-
-        if (str_starts_with($url, '//')) {
-            return $scheme.':'.$url;
-        }
-
-        if (str_starts_with($url, '/')) {
-            return "{$scheme}://{$host}{$url}";
-        }
-
-        $path = $parsedBase['path'] ?? '';
-        $basePath = substr($path, 0, strrpos($path, '/') + 1);
-
-        return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
     private function isProductUrl(string $url): bool
@@ -94,13 +91,36 @@ class PAHProductListingUrlExtractor implements ExtractorInterface
         // Extract category from the source URL path
         // e.g., /shop/en/pets/dog/dog-food -> "dog-food"
         // e.g., /shop/en/pets/dog/dog-treats -> "dog-treats"
-        if (preg_match('/\/(dog|cat|puppy|kitten)[-\/]?(food|treats|accessories)?/i', $url, $matches)) {
-            $animal = strtolower($matches[1]);
-            $type = isset($matches[2]) ? strtolower($matches[2]) : null;
+        // First try to match full category like "dog-food" or "cat-treats"
+        if (preg_match('/\/(dog|cat|puppy|kitten)-(food|treats|accessories)/i', $url, $matches)) {
+            return strtolower($matches[1]).'-'.strtolower($matches[2]);
+        }
 
-            return $type ? "{$animal}-{$type}" : $animal;
+        // Fall back to just the animal type
+        if (preg_match('/\/(dog|cat|puppy|kitten)(?:\/|$|\?)/i', $url, $matches)) {
+            return strtolower($matches[1]);
         }
 
         return null;
+    }
+
+    /**
+     * Normalize a pagination URL to absolute form.
+     */
+    protected function normalizePageUrl(string $href, string $baseUrl): string
+    {
+        return $this->normalizeUrl($href, $baseUrl);
+    }
+
+    /**
+     * Extract page number from a pagination URL.
+     */
+    private function extractPageNumberFromUrl(string $url): int
+    {
+        if (preg_match('/[?&]page=(\d+)/i', $url, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return 2; // Default to page 2 if we can't parse
     }
 }

@@ -8,6 +8,7 @@ use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\DTOs\PaginatedUrl;
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Extractors\Concerns\ExtractsPagination;
+use App\Crawler\Extractors\Concerns\NormalizesUrls;
 use Generator;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\DomCrawler\Crawler;
@@ -15,6 +16,7 @@ use Symfony\Component\DomCrawler\Crawler;
 class JFPProductListingUrlExtractor implements ExtractorInterface
 {
     use ExtractsPagination;
+    use NormalizesUrls;
 
     public function extract(string $html, string $url): Generator
     {
@@ -74,30 +76,6 @@ class JFPProductListingUrlExtractor implements ExtractorInterface
     public function canHandle(string $url): bool
     {
         return str_contains($url, 'justforpetsonline.co.uk');
-    }
-
-    private function normalizeUrl(string $url, string $baseUrl): string
-    {
-        if (str_starts_with($url, 'http://') || str_starts_with($url, 'https://')) {
-            return $url;
-        }
-
-        $parsedBase = parse_url($baseUrl);
-        $scheme = $parsedBase['scheme'] ?? 'https';
-        $host = $parsedBase['host'] ?? 'www.justforpetsonline.co.uk';
-
-        if (str_starts_with($url, '//')) {
-            return $scheme.':'.$url;
-        }
-
-        if (str_starts_with($url, '/')) {
-            return "{$scheme}://{$host}{$url}";
-        }
-
-        $path = $parsedBase['path'] ?? '';
-        $basePath = substr($path, 0, strrpos($path, '/') + 1);
-
-        return "{$scheme}://{$host}{$basePath}{$url}";
     }
 
     private function isProductUrl(string $url): bool
