@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dog Food | Sainsbury's</title>
+</head>
+<body>
+    <nav data-test-id="breadcrumb">
+        <a href="/">Home</a>
+        <a href="/shop/gb/groceries/pets">Pets</a>
+        <a href="/shop/gb/groceries/pets/dog">Dog</a>
+        <a href="/shop/gb/groceries/pets/dog/dog-food">Dog Food</a>
+    </nav>
+
+    <div class="product-listing">
+        <a href="/gol-ui/product/pedigree-vital-protection-adult--7878567">
+            <div class="product-card">
+                <h3>Pedigree Vital Protection Adult Dog Food with Chicken 2.6kg</h3>
+                <span class="price">£5.75</span>
+            </div>
+        </a>
+
+        <a href="/product/royal-canin-mini-adult-dog-food-2kg-1234567">
+            <div class="product-card">
+                <h3>Royal Canin Mini Adult Dog Food 2kg</h3>
+                <span class="price">£15.99</span>
+            </div>
+        </a>
+
+        <a href="/shop/gb/groceries/dog-food/harringtons-complete-dry-dog-food--2345678">
+            <div class="product-card">
+                <h3>Harringtons Complete Dry Dog Food 10kg</h3>
+                <span class="price">£18.00</span>
+            </div>
+        </a>
+    </div>
+
+    <script>
+        window.__INITIAL_STATE__ = {
+            products: [
+                {"product_uid": "3456789", "name": "Butchers Complete"},
+                {"product_uid": "4567890", "name": "Cesar Wet Food"}
+            ]
+        };
+    </script>
+
+    <nav class="pagination">
+        <a href="/shop/gb/groceries/pets/dog/dog-food?page=2" rel="next">Next</a>
+    </nav>
+</body>
+</html>

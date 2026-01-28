@@ -7,7 +7,7 @@ namespace App\Domain\Crawler\Reactors;
 use App\Domain\Crawler\Events\CrawlCompleted;
 use App\Domain\Crawler\Events\CrawlFailed;
 use App\Domain\Crawler\Events\CrawlStarted;
-use App\Enums\RetailerHealthStatus;
+use App\Enums\RetailerStatus;
 use App\Models\Retailer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -49,12 +49,18 @@ class UpdateRetailerHealthReactor extends Reactor
             return;
         }
 
-        // Reset consecutive failures and set health status to healthy
-        $retailer->update([
+        // Reset consecutive failures and transition to Active status
+        $updateData = [
             'consecutive_failures' => 0,
-            'health_status' => RetailerHealthStatus::Healthy,
             'paused_until' => null,
-        ]);
+        ];
+
+        // Transition to Active if allowed
+        if ($retailer->status->canTransitionTo(RetailerStatus::Active)) {
+            $updateData['status'] = RetailerStatus::Active;
+        }
+
+        $retailer->update($updateData);
 
         // Update cache-based health metrics
         $this->recordCrawlResult($retailerSlug, true, $event->statistics['duration_seconds'] ?? null);
@@ -64,7 +70,7 @@ class UpdateRetailerHealthReactor extends Reactor
             'retailer' => $retailerSlug,
             'crawl_id' => $event->crawlId,
             'products_discovered' => $event->productListingsDiscovered,
-            'health_status' => RetailerHealthStatus::Healthy->value,
+            'status' => $retailer->fresh()->status->value,
         ]);
     }
 
@@ -99,21 +105,34 @@ class UpdateRetailerHealthReactor extends Reactor
             'last_failure_at' => now(),
         ];
 
-        // Apply circuit breaker logic
-        $healthStatus = $this->determineHealthStatus($newConsecutiveFailures);
-        $updateData['health_status'] = $healthStatus;
+        // Apply circuit breaker logic with state transitions
+        $newStatus = $this->determineStatus($retailer->status, $newConsecutiveFailures);
 
-        // If unhealthy, pause the retailer
-        if ($healthStatus === RetailerHealthStatus::Unhealthy && ! $retailer->isPaused()) {
-            $updateData['paused_until'] = now()->addHours(self::PAUSE_DURATION_HOURS);
+        // Validate and apply transition
+        if ($retailer->status->canTransitionTo($newStatus)) {
+            $updateData['status'] = $newStatus;
 
-            Log::error('CIRCUIT BREAKER ACTIVATED: Retailer paused due to consecutive failures', [
+            // If transitioning to Failed, pause the retailer (but don't extend if already paused)
+            if ($newStatus === RetailerStatus::Failed && ! $retailer->isPaused()) {
+                $updateData['paused_until'] = now()->addHours(self::PAUSE_DURATION_HOURS);
+
+                Log::error('CIRCUIT BREAKER ACTIVATED: Retailer failed due to consecutive failures', [
+                    'retailer' => $retailerSlug,
+                    'retailer_id' => $retailer->id,
+                    'consecutive_failures' => $newConsecutiveFailures,
+                    'threshold' => self::UNHEALTHY_THRESHOLD,
+                    'previous_status' => $retailer->status->value,
+                    'new_status' => $newStatus->value,
+                    'paused_until' => $updateData['paused_until']->toIso8601String(),
+                    'pause_duration_hours' => self::PAUSE_DURATION_HOURS,
+                ]);
+            }
+        } else {
+            Log::warning('Cannot transition retailer status after failure', [
                 'retailer' => $retailerSlug,
-                'retailer_id' => $retailer->id,
+                'current_status' => $retailer->status->value,
+                'attempted_status' => $newStatus->value,
                 'consecutive_failures' => $newConsecutiveFailures,
-                'threshold' => self::UNHEALTHY_THRESHOLD,
-                'paused_until' => $updateData['paused_until']->toIso8601String(),
-                'pause_duration_hours' => self::PAUSE_DURATION_HOURS,
             ]);
         }
 
@@ -128,21 +147,22 @@ class UpdateRetailerHealthReactor extends Reactor
             'crawl_id' => $event->crawlId,
             'reason' => $event->reason,
             'consecutive_failures' => $newConsecutiveFailures,
-            'health_status' => $healthStatus->value,
+            'status' => $retailer->fresh()->status->value,
         ]);
     }
 
-    private function determineHealthStatus(int $consecutiveFailures): RetailerHealthStatus
+    private function determineStatus(RetailerStatus $currentStatus, int $consecutiveFailures): RetailerStatus
     {
+        // Circuit breaker: transition through states based on failure count
         if ($consecutiveFailures >= self::UNHEALTHY_THRESHOLD) {
-            return RetailerHealthStatus::Unhealthy;
+            return RetailerStatus::Failed;
         }
 
         if ($consecutiveFailures >= self::DEGRADED_THRESHOLD) {
-            return RetailerHealthStatus::Degraded;
+            return RetailerStatus::Degraded;
         }
 
-        return RetailerHealthStatus::Healthy;
+        return RetailerStatus::Active;
     }
 
     private function getRetailerFromCrawl(string $crawlId): ?string
@@ -254,12 +274,18 @@ class UpdateRetailerHealthReactor extends Reactor
         $retailer = Retailer::query()->where('slug', $retailerSlug)->first();
 
         if ($retailer) {
-            $retailer->update([
+            $updateData = [
                 'consecutive_failures' => 0,
-                'health_status' => RetailerHealthStatus::Healthy,
                 'paused_until' => null,
                 'last_failure_at' => null,
-            ]);
+            ];
+
+            // Transition to Active if allowed
+            if ($retailer->status->canTransitionTo(RetailerStatus::Active)) {
+                $updateData['status'] = RetailerStatus::Active;
+            }
+
+            $retailer->update($updateData);
 
             // Clear cache-based metrics
             Cache::forget("crawler:health:results:{$retailerSlug}");
@@ -268,6 +294,7 @@ class UpdateRetailerHealthReactor extends Reactor
             Log::info('Retailer health manually reset', [
                 'retailer' => $retailerSlug,
                 'retailer_id' => $retailer->id,
+                'status' => $retailer->fresh()->status->value,
             ]);
         }
     }

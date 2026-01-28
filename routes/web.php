@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CrawlMonitoringController;
 use App\Http\Controllers\Admin\ProductVerificationController;
+use App\Http\Controllers\Admin\RetailerController;
 use App\Http\Controllers\ProductController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -24,6 +25,21 @@ Route::middleware(['auth', 'verified'])->prefix('scraper-tester')->group(functio
 });
 
 Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
+    Route::prefix('retailers')->group(function () {
+        Route::get('/', [RetailerController::class, 'index'])
+            ->name('admin.retailers.index');
+        Route::get('/create', [RetailerController::class, 'create'])
+            ->name('admin.retailers.create');
+        Route::post('/', [RetailerController::class, 'store'])
+            ->name('admin.retailers.store');
+        Route::get('/{retailer}/edit', [RetailerController::class, 'edit'])
+            ->name('admin.retailers.edit');
+        Route::put('/{retailer}', [RetailerController::class, 'update'])
+            ->name('admin.retailers.update');
+        Route::post('/{retailer}/test-connection', [RetailerController::class, 'testConnection'])
+            ->name('admin.retailers.test-connection');
+    });
+
     Route::get('/crawl-monitoring', [CrawlMonitoringController::class, 'index'])
         ->name('admin.crawl-monitoring');
     Route::post('/crawl-monitoring/jobs/{job}/retry', [CrawlMonitoringController::class, 'retryJob'])

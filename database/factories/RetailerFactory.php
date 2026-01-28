@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Enums\RetailerHealthStatus;
+use App\Enums\RetailerStatus;
 use App\Models\Retailer;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
@@ -27,8 +27,7 @@ class RetailerFactory extends Factory
             'slug' => Str::slug($name),
             'base_url' => 'https://www.'.$domain,
             'crawler_class' => null,
-            'is_active' => true,
-            'health_status' => RetailerHealthStatus::Healthy,
+            'status' => RetailerStatus::Active,
             'consecutive_failures' => 0,
             'last_failure_at' => null,
             'paused_until' => null,
@@ -38,12 +37,12 @@ class RetailerFactory extends Factory
     }
 
     /**
-     * Indicate that the retailer is inactive.
+     * Indicate that the retailer is disabled.
      */
-    public function inactive(): static
+    public function disabled(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'is_active' => false,
+            'status' => RetailerStatus::Disabled,
         ]);
     }
 
@@ -63,18 +62,18 @@ class RetailerFactory extends Factory
     public function degraded(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'health_status' => RetailerHealthStatus::Degraded,
+            'status' => RetailerStatus::Degraded,
             'consecutive_failures' => 5,
         ]);
     }
 
     /**
-     * Indicate that the retailer has an unhealthy status.
+     * Indicate that the retailer has failed status.
      */
-    public function unhealthy(): static
+    public function failed(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'health_status' => RetailerHealthStatus::Unhealthy,
+            'status' => RetailerStatus::Failed,
             'consecutive_failures' => 10,
         ]);
     }
@@ -85,9 +84,26 @@ class RetailerFactory extends Factory
     public function paused(): static
     {
         return $this->state(fn (array $attributes): array => [
-            'health_status' => RetailerHealthStatus::Unhealthy,
-            'consecutive_failures' => 10,
+            'status' => RetailerStatus::Paused,
             'paused_until' => now()->addHour(),
         ]);
+    }
+
+    /**
+     * Alias for failed() to support legacy test code.
+     * Indicates an unhealthy retailer.
+     */
+    public function unhealthy(): static
+    {
+        return $this->failed();
+    }
+
+    /**
+     * Alias for disabled() to support legacy test code.
+     * Indicates an inactive retailer.
+     */
+    public function inactive(): static
+    {
+        return $this->disabled();
     }
 }

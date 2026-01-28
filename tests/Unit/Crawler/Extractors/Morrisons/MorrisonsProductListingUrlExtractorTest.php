@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Extractors\Morrisons\MorrisonsProductListingUrlExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new MorrisonsProductListingUrlExtractor;
+    $this->extractor = new MorrisonsProductListingUrlExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('canHandle', function () {

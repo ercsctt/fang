@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\RetailerStatusController;
 use App\Http\Controllers\Api\V1\ExportController;
 use App\Http\Controllers\Api\V1\PriceAlertController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -33,5 +34,14 @@ Route::prefix('v1')->name('api.v1.')->middleware('throttle:api')->group(function
         Route::get('exports/{export}', [ExportController::class, 'show'])->name('exports.show');
         Route::get('exports/{export}/download', [ExportController::class, 'download'])->name('exports.download');
         Route::delete('exports/{export}', [ExportController::class, 'destroy'])->name('exports.destroy');
+
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::prefix('retailers/{retailer}')->name('retailers.')->group(function () {
+                Route::post('pause', [RetailerStatusController::class, 'pause'])->name('pause');
+                Route::post('resume', [RetailerStatusController::class, 'resume'])->name('resume');
+                Route::post('disable', [RetailerStatusController::class, 'disable'])->name('disable');
+                Route::post('enable', [RetailerStatusController::class, 'enable'])->name('enable');
+            });
+        });
     });
 });

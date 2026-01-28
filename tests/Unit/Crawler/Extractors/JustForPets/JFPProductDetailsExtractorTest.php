@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\JustForPets\JFPProductDetailsExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new JFPProductDetailsExtractor;
+    $this->extractor = new JFPProductDetailsExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('JFPProductDetailsExtractor canHandle', function () {
@@ -260,7 +263,7 @@ describe('weight parsing', function () {
     });
 
     test('parses weight in pounds', function () {
-        expect($this->extractor->parseWeight('5lb'))->toBe(2265);
+        expect($this->extractor->parseWeight('5lb'))->toBe(2270); // 5 * 454.0
     });
 
     test('parses weight in ounces', function () {

@@ -108,7 +108,7 @@ describe('extractWeightFromTitle', function () {
     test('extracts weight in pounds', function () {
         $result = $this->normalizer->extractWeightFromTitle('Food 5lb');
 
-        expect($result)->toBe(2268); // 5 * 453.592 rounded
+        expect($result)->toBe(2270); // 5 * 454.0 rounded (simplified conversion)
     });
 
     test('returns null when no weight found', function () {

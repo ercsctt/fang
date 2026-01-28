@@ -14,8 +14,8 @@ class TescoCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new TescoProductListingUrlExtractor);
-        $this->addExtractor(new TescoProductDetailsExtractor);
+        $this->addExtractor(TescoProductListingUrlExtractor::class);
+        $this->addExtractor(TescoProductDetailsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -33,26 +33,5 @@ class TescoCrawler extends BaseCrawler
             'https://www.tesco.com/groceries/en-GB/shop/pets/dog-food-and-treats/dog-treats',
             'https://www.tesco.com/groceries/en-GB/shop/pets/dog-food-and-treats/puppy-food',
         ];
-    }
-
-    /**
-     * Tesco specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Tesco (2 seconds to be respectful).
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000;
     }
 }

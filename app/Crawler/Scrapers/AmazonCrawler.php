@@ -15,9 +15,9 @@ class AmazonCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new AmazonProductListingUrlExtractor);
-        $this->addExtractor(new AmazonProductDetailsExtractor);
-        $this->addExtractor(new AmazonProductReviewsExtractor);
+        $this->addExtractor(AmazonProductListingUrlExtractor::class);
+        $this->addExtractor(AmazonProductDetailsExtractor::class);
+        $this->addExtractor(AmazonProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -43,39 +43,5 @@ class AmazonCrawler extends BaseCrawler
             'https://www.amazon.co.uk/s?k=royal+canin+dog+food',
             'https://www.amazon.co.uk/s?k=james+wellbeloved+dog+food',
         ];
-    }
-
-    /**
-     * Amazon UK specific request options.
-     *
-     * Amazon requires specific headers to avoid blocks.
-     * Note: Using BrightData Web Unlocker is recommended.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Encoding' => 'gzip, deflate, br',
-                'Cache-Control' => 'max-age=0',
-                'Sec-Fetch-Dest' => 'document',
-                'Sec-Fetch-Mode' => 'navigate',
-                'Sec-Fetch-Site' => 'none',
-                'Sec-Fetch-User' => '?1',
-                'Upgrade-Insecure-Requests' => '1',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Amazon UK.
-     *
-     * Amazon has aggressive anti-bot detection, so we use a longer delay.
-     * 3 seconds between requests to avoid triggering rate limits.
-     */
-    public function getRequestDelay(): int
-    {
-        return 3000;
     }
 }

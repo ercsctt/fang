@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Extractors\JustForPets\JFPProductListingUrlExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new JFPProductListingUrlExtractor;
+    $this->extractor = new JFPProductListingUrlExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('canHandle', function () {

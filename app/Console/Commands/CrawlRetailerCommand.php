@@ -89,14 +89,12 @@ class CrawlRetailerCommand extends Command
             return 0;
         }
 
-        if (! $retailer->is_active) {
-            $this->warn("Skipping {$retailer->name}: Retailer is inactive");
-
-            return 0;
-        }
-
-        if ($retailer->isPaused()) {
-            $this->warn("Skipping {$retailer->name}: Retailer is paused until {$retailer->paused_until->format('Y-m-d H:i')}");
+        if (! $retailer->isAvailableForCrawling()) {
+            if ($retailer->isPaused()) {
+                $this->warn("Skipping {$retailer->name}: Retailer is paused until {$retailer->paused_until->format('Y-m-d H:i')}");
+            } else {
+                $this->warn("Skipping {$retailer->name}: Retailer is {$retailer->status->label()}");
+            }
 
             return 0;
         }
@@ -145,7 +143,7 @@ class CrawlRetailerCommand extends Command
     private function listAvailableRetailers(): void
     {
         $retailers = Retailer::query()
-            ->select(['slug', 'name', 'is_active'])
+            ->select(['slug', 'name', 'status'])
             ->whereNotNull('crawler_class')
             ->orderBy('name')
             ->get();
@@ -159,8 +157,8 @@ class CrawlRetailerCommand extends Command
         $this->line('Available retailers:');
 
         foreach ($retailers as $retailer) {
-            $status = $retailer->is_active ? '<fg=green>active</>' : '<fg=yellow>inactive</>';
-            $this->line("  - {$retailer->slug} ({$retailer->name}) [{$status}]");
+            $color = $retailer->status->isAvailableForCrawling() ? 'green' : 'yellow';
+            $this->line("  - {$retailer->slug} ({$retailer->name}) [<fg={$color}>{$retailer->status->label()}</>]");
         }
     }
 }

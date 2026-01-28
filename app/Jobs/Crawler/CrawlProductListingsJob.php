@@ -6,11 +6,11 @@ namespace App\Jobs\Crawler;
 
 use App\Crawler\Adapters\GuzzleHttpAdapter;
 use App\Crawler\Contracts\HttpAdapterInterface;
-use App\Crawler\Contracts\SupportsProxyInterface;
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Proxies\BrightDataProxyAdapter;
 use App\Crawler\Scrapers\BaseCrawler;
 use App\Domain\Crawler\Aggregates\CrawlAggregate;
+use App\Models\Retailer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -24,7 +24,9 @@ class CrawlProductListingsJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 300;
+
     public int $tries = 3;
+
     public int $backoff = 60;
 
     public function __construct(
@@ -38,12 +40,38 @@ class CrawlProductListingsJob implements ShouldQueue
     {
         $crawlId = $this->crawlId ?? Str::uuid()->toString();
 
-        Log::info("Starting crawl job", [
+        Log::info('Starting crawl job', [
             'crawl_id' => $crawlId,
             'crawler' => $this->crawlerClass,
             'url' => $this->url,
             'use_advanced_adapter' => $this->useAdvancedAdapter,
         ]);
+
+        // Verify retailer can be crawled
+        /** @var BaseCrawler $tempCrawler */
+        $tempCrawler = new $this->crawlerClass(new GuzzleHttpAdapter);
+        $retailerSlug = $tempCrawler->getRetailerName();
+
+        $retailer = Retailer::query()->where('slug', $retailerSlug)->first();
+
+        if (! $retailer) {
+            Log::warning('Retailer not found, skipping crawl', [
+                'crawl_id' => $crawlId,
+                'retailer_slug' => $retailerSlug,
+            ]);
+
+            return;
+        }
+
+        if (! $retailer->isAvailableForCrawling()) {
+            Log::info('Retailer not available for crawling, skipping job', [
+                'crawl_id' => $crawlId,
+                'retailer' => $retailerSlug,
+                'status' => $retailer->status->value,
+            ]);
+
+            return;
+        }
 
         // Create HTTP adapter based on configuration
         $httpAdapter = $this->createHttpAdapter();
@@ -74,7 +102,7 @@ class CrawlProductListingsJob implements ShouldQueue
                 if ($dto instanceof ProductListingUrl) {
                     $discoveredCount++;
 
-                    Log::info("Discovered product listing", [
+                    Log::info('Discovered product listing', [
                         'crawl_id' => $crawlId,
                         'url' => $dto->url,
                         'retailer' => $dto->retailer,
@@ -99,11 +127,11 @@ class CrawlProductListingsJob implements ShouldQueue
                 'discovered_count' => $discoveredCount,
             ])->persist();
 
-            Log::info("Crawl job completed successfully", [
+            Log::info('Crawl job completed successfully', [
                 'crawl_id' => $crawlId,
                 'url' => $this->url,
                 'discovered_count' => $discoveredCount,
-                'duration' => round($duration, 2) . 's',
+                'duration' => round($duration, 2).'s',
             ]);
 
             // Respect rate limits - sleep before next job
@@ -112,7 +140,7 @@ class CrawlProductListingsJob implements ShouldQueue
                 usleep($delayMs * 1000);
             }
         } catch (\Exception $e) {
-            Log::error("Crawl job failed", [
+            Log::error('Crawl job failed', [
                 'crawl_id' => $crawlId,
                 'url' => $this->url,
                 'error' => $e->getMessage(),
@@ -144,15 +172,15 @@ class CrawlProductListingsJob implements ShouldQueue
 
         // Configure proxy if BrightData is configured
         if (config('services.brightdata.username') && config('services.brightdata.password')) {
-            $proxyAdapter = new BrightDataProxyAdapter();
+            $proxyAdapter = new BrightDataProxyAdapter;
             $adapter->withProxy($proxyAdapter);
 
-            Log::info("Using BrightData proxy for crawling", [
+            Log::info('Using BrightData proxy for crawling', [
                 'zone' => config('services.brightdata.zone'),
                 'country' => config('services.brightdata.country'),
             ]);
         } else {
-            Log::warning("BrightData credentials not configured, crawling without proxy");
+            Log::warning('BrightData credentials not configured, crawling without proxy');
         }
 
         return $adapter;

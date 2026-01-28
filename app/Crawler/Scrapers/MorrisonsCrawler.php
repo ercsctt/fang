@@ -15,9 +15,9 @@ class MorrisonsCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new MorrisonsProductListingUrlExtractor);
-        $this->addExtractor(new MorrisonsProductDetailsExtractor);
-        $this->addExtractor(new MorrisonsProductReviewsExtractor);
+        $this->addExtractor(MorrisonsProductListingUrlExtractor::class);
+        $this->addExtractor(MorrisonsProductDetailsExtractor::class);
+        $this->addExtractor(MorrisonsProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -35,36 +35,5 @@ class MorrisonsCrawler extends BaseCrawler
             'https://groceries.morrisons.com/browse/pet/dog/dog-treats',
             'https://groceries.morrisons.com/browse/pet/dog/puppy-food',
         ];
-    }
-
-    /**
-     * Morrisons specific request options.
-     *
-     * Morrisons Groceries may use React-based frontend and dynamic loading,
-     * so we set appropriate headers to mimic browser behavior.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Cache-Control' => 'no-cache',
-                'Pragma' => 'no-cache',
-                'Sec-Fetch-Dest' => 'document',
-                'Sec-Fetch-Mode' => 'navigate',
-                'Sec-Fetch-Site' => 'none',
-                'Sec-Fetch-User' => '?1',
-                'Upgrade-Insecure-Requests' => '1',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Morrisons (2 seconds to be respectful).
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000;
     }
 }

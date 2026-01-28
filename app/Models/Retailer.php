@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\RetailerHealthStatus;
+use App\Enums\RetailerStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -23,8 +23,7 @@ class Retailer extends Model
         'slug',
         'base_url',
         'crawler_class',
-        'is_active',
-        'health_status',
+        'status',
         'last_failure_at',
         'consecutive_failures',
         'paused_until',
@@ -38,8 +37,7 @@ class Retailer extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
-            'health_status' => RetailerHealthStatus::class,
+            'status' => RetailerStatus::class,
             'last_failure_at' => 'datetime',
             'consecutive_failures' => 'integer',
             'paused_until' => 'datetime',
@@ -60,7 +58,7 @@ class Retailer extends Model
      */
     public function isAvailableForCrawling(): bool
     {
-        return $this->is_active && ! $this->isPaused();
+        return $this->status->isAvailableForCrawling();
     }
 
     /**
@@ -77,6 +75,6 @@ class Retailer extends Model
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('is_active', true);
+        return $query->where('status', RetailerStatus::Active);
     }
 }

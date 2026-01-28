@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Crawler\Scrapers;
 
-use App\Crawler\Contracts\ExtractorInterface;
 use App\Crawler\Contracts\HttpAdapterInterface;
 use Generator;
 use Illuminate\Support\Facades\Log;
 
 abstract class BaseCrawler
 {
-    /** @var array<ExtractorInterface> */
+    /** @var array<string> */
     protected array $extractors = [];
 
     public function __construct(
@@ -35,9 +34,10 @@ abstract class BaseCrawler
                 'html_length' => strlen($html),
             ]);
 
-            foreach ($this->extractors as $extractor) {
+            foreach ($this->extractors as $class) {
+                $extractor = app()->make($class);
                 if ($extractor->canHandle($url)) {
-                    Log::info("Running extractor: " . get_class($extractor));
+                    Log::info('Running extractor: '.get_class($extractor));
 
                     foreach ($extractor->extract($html, $url) as $dto) {
                         yield $dto;
@@ -57,16 +57,17 @@ abstract class BaseCrawler
     /**
      * Register an extractor with this crawler.
      */
-    public function addExtractor(ExtractorInterface $extractor): self
+    public function addExtractor(string $class): self
     {
-        $this->extractors[] = $extractor;
+        $this->extractors[] = $class;
+
         return $this;
     }
 
     /**
      * Get extractors registered with this crawler.
      *
-     * @return array<ExtractorInterface>
+     * @return array<string>
      */
     public function getExtractors(): array
     {
@@ -79,6 +80,20 @@ abstract class BaseCrawler
     abstract public function getRetailerName(): string;
 
     /**
+     * Get the retailer slug for configuration lookup.
+     *
+     * Defaults to a snake_case version of the class name without "Crawler".
+     * Override this method if you need a different slug.
+     */
+    public function getRetailerSlug(): string
+    {
+        $className = class_basename($this);
+        $slug = str_replace('Crawler', '', $className);
+
+        return strtolower($slug);
+    }
+
+    /**
      * Get the starting URLs to crawl for this retailer.
      *
      * @return array<string>
@@ -88,18 +103,27 @@ abstract class BaseCrawler
     /**
      * Get custom request options for this crawler.
      *
+     * Reads from config/crawler.php based on retailer slug.
+     *
      * @return array<string, mixed>
      */
     protected function getRequestOptions(): array
     {
-        return [];
+        $slug = $this->getRetailerSlug();
+        $headers = config("crawler.retailers.{$slug}.headers", config('crawler.default_headers', []));
+
+        return empty($headers) ? [] : ['headers' => $headers];
     }
 
     /**
      * Get the delay in milliseconds between requests.
+     *
+     * Reads from config/crawler.php based on retailer slug.
      */
     public function getRequestDelay(): int
     {
-        return 1000; // 1 second default
+        $slug = $this->getRetailerSlug();
+
+        return config("crawler.retailers.{$slug}.request_delay", config('crawler.default_delay', 1000));
     }
 }

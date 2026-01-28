@@ -27,6 +27,13 @@ Schedule::command('crawler:dispatch-all --delay=300')
     ->appendOutputTo(storage_path('logs/crawler-schedule.log'))
     ->description('Daily product listing crawl for all active retailers');
 
+Schedule::command('retailers:resume-expired')
+    ->hourly()
+    ->timezone('Europe/London')
+    ->onOneServer()
+    ->appendOutputTo(storage_path('logs/retailer-resume.log'))
+    ->description('Auto-resume retailers whose pause period has expired');
+
 /*
 |--------------------------------------------------------------------------
 | Review Scraping (Weekly)

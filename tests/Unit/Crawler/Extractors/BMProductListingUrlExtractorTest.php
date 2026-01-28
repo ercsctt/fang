@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductListingUrl;
-use App\Crawler\Extractors\BMProductListingUrlExtractor;
+use App\Crawler\Extractors\BM\BMProductListingUrlExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new BMProductListingUrlExtractor;
+    $this->extractor = new BMProductListingUrlExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('canHandle', function () {

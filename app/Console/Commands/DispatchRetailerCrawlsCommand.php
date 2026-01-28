@@ -18,15 +18,17 @@ class DispatchRetailerCrawlsCommand extends Command
                             {--queue=crawler : The queue to dispatch jobs to}
                             {--delay=0 : Base delay in seconds between retailers}';
 
-    protected $description = 'Dispatch crawl jobs for all active retailers with their starting URLs';
+    protected $description = 'Dispatch crawl jobs for all crawlable retailers with their starting URLs';
 
     public function handle(): int
     {
-        $query = Retailer::active()
-            ->where(function ($q) {
-                $q->where('paused_until', '<', now())
-                    ->orWhereNull('paused_until');
-            });
+        // Get retailers that can be crawled based on their status
+        $query = Retailer::query()->where(function ($q) {
+            $q->whereIn('status', array_map(
+                fn ($status) => $status->value,
+                \App\Enums\RetailerStatus::crawlableStatuses()
+            ));
+        });
 
         if ($retailerSlug = $this->option('retailer')) {
             $query->where('slug', $retailerSlug);
@@ -35,7 +37,7 @@ class DispatchRetailerCrawlsCommand extends Command
         $retailers = $query->get();
 
         if ($retailers->isEmpty()) {
-            $this->warn('No active retailers found to crawl.');
+            $this->warn('No crawlable retailers found.');
 
             return self::SUCCESS;
         }

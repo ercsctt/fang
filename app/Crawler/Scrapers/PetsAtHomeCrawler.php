@@ -14,8 +14,8 @@ class PetsAtHomeCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new PAHProductListingUrlExtractor);
-        $this->addExtractor(new PAHProductDetailsExtractor);
+        $this->addExtractor(PAHProductListingUrlExtractor::class);
+        $this->addExtractor(PAHProductDetailsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -34,26 +34,5 @@ class PetsAtHomeCrawler extends BaseCrawler
             'https://www.petsathome.com/shop/en/pets/dog/puppy/puppy-food',
             'https://www.petsathome.com/shop/en/pets/dog/puppy/puppy-treats',
         ];
-    }
-
-    /**
-     * Pets at Home specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Pets at Home (2 seconds recommended).
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000;
     }
 }

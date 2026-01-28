@@ -115,7 +115,7 @@ class DataFreshnessMonitorCommand extends Command
     protected function checkInactiveRetailers(int $thresholdHours): array
     {
         $inactiveRetailers = Retailer::query()
-            ->where('is_active', true)
+            ->whereIn('status', \App\Enums\RetailerStatus::crawlableStatuses())
             ->where(function ($query) use ($thresholdHours) {
                 $query->whereNull('last_crawled_at')
                     ->orWhere('last_crawled_at', '<', now()->subHours($thresholdHours));
@@ -126,7 +126,7 @@ class DataFreshnessMonitorCommand extends Command
                     'name' => $retailer->name,
                     'slug' => $retailer->slug,
                     'last_crawled' => $retailer->last_crawled_at?->diffForHumans() ?? 'Never',
-                    'health_status' => $retailer->health_status->value,
+                    'status' => $retailer->status->value,
                     'consecutive_failures' => $retailer->consecutive_failures,
                 ];
             });
@@ -150,7 +150,7 @@ class DataFreshnessMonitorCommand extends Command
 
         $failureStats = Cache::remember($cacheKey, now()->addHour(), function () use ($threshold) {
             return Retailer::query()
-                ->where('is_active', true)
+                ->whereIn('status', \App\Enums\RetailerStatus::crawlableStatuses())
                 ->get()
                 ->map(function (Retailer $retailer) use ($threshold) {
                     $totalListings = $retailer->productListings()->count();
@@ -281,12 +281,12 @@ class DataFreshnessMonitorCommand extends Command
             $rows[] = [
                 $retailer['name'],
                 $retailer['last_crawled'],
-                $retailer['health_status'],
+                $retailer['status'],
                 (string) $retailer['consecutive_failures'],
             ];
         }
 
-        table(['Retailer', 'Last Crawled', 'Health Status', 'Consecutive Failures'], $rows);
+        table(['Retailer', 'Last Crawled', 'Status', 'Consecutive Failures'], $rows);
     }
 
     /**

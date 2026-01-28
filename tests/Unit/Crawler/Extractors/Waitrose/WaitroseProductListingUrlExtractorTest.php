@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductListingUrl;
 use App\Crawler\Extractors\Waitrose\WaitroseProductListingUrlExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new WaitroseProductListingUrlExtractor;
+    $this->extractor = new WaitroseProductListingUrlExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('canHandle', function () {

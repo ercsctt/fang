@@ -1,6 +1,7 @@
 <?php
 
 use App\Crawler\Scrapers\BMCrawler;
+use App\Enums\RetailerStatus;
 use App\Jobs\Crawler\CrawlProductListingsJob;
 use App\Models\Retailer;
 use Illuminate\Support\Facades\Bus;
@@ -23,14 +24,16 @@ test('command dispatches crawl jobs for active retailers', function () {
     Bus::assertDispatched(CrawlProductListingsJob::class);
 });
 
-test('command skips inactive retailers', function () {
+test('command skips disabled retailers', function () {
     Retailer::factory()
-        ->inactive()
         ->withCrawler(BMCrawler::class)
-        ->create(['name' => 'Inactive Store']);
+        ->create([
+            'name' => 'Disabled Store',
+            'status' => RetailerStatus::Disabled,
+        ]);
 
     $this->artisan('crawler:dispatch-all')
-        ->expectsOutputToContain('No active retailers found to crawl')
+        ->expectsOutputToContain('No crawlable retailers found')
         ->assertExitCode(0);
 
     Bus::assertNotDispatched(CrawlProductListingsJob::class);
@@ -38,29 +41,33 @@ test('command skips inactive retailers', function () {
 
 test('command skips paused retailers', function () {
     Retailer::factory()
-        ->paused()
         ->withCrawler(BMCrawler::class)
-        ->create(['name' => 'Paused Store']);
+        ->create([
+            'name' => 'Paused Store',
+            'status' => RetailerStatus::Paused,
+            'paused_until' => now()->addHour(),
+        ]);
 
     $this->artisan('crawler:dispatch-all')
-        ->expectsOutputToContain('No active retailers found to crawl')
+        ->expectsOutputToContain('No crawlable retailers found')
         ->assertExitCode(0);
 
     Bus::assertNotDispatched(CrawlProductListingsJob::class);
 });
 
-test('command includes retailers with expired pause', function () {
+test('command includes active retailers regardless of paused_until field', function () {
     $retailer = Retailer::factory()
         ->withCrawler(BMCrawler::class)
         ->create([
-            'name' => 'Expired Pause',
-            'slug' => 'expired-pause',
-            'paused_until' => now()->subHour(),
+            'name' => 'Active Store',
+            'slug' => 'active-store',
+            'status' => RetailerStatus::Active,
+            'paused_until' => now()->subHour(), // expired pause time, but status is Active
         ]);
 
     $this->artisan('crawler:dispatch-all')
         ->expectsOutputToContain('Dispatching crawl jobs for 1 retailer(s)')
-        ->expectsOutputToContain('Processing retailer: Expired Pause')
+        ->expectsOutputToContain('Processing retailer: Active Store')
         ->assertExitCode(0);
 
     Bus::assertDispatched(CrawlProductListingsJob::class);
@@ -70,7 +77,7 @@ test('command skips retailers without crawler class', function () {
     Retailer::factory()->create([
         'name' => 'No Crawler',
         'crawler_class' => null,
-        'is_active' => true,
+        'status' => RetailerStatus::Active,
     ]);
 
     $this->artisan('crawler:dispatch-all')

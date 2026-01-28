@@ -15,9 +15,9 @@ class ZooplusCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new ZooplusProductListingUrlExtractor);
-        $this->addExtractor(new ZooplusProductDetailsExtractor);
-        $this->addExtractor(new ZooplusProductReviewsExtractor);
+        $this->addExtractor(ZooplusProductListingUrlExtractor::class);
+        $this->addExtractor(ZooplusProductDetailsExtractor::class);
+        $this->addExtractor(ZooplusProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -42,26 +42,5 @@ class ZooplusCrawler extends BaseCrawler
             'https://www.zooplus.co.uk/shop/dogs/dog_treats_chews/training_treats',
             'https://www.zooplus.co.uk/shop/dogs/dog_treats_chews/dental_treats',
         ];
-    }
-
-    /**
-     * Zooplus specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Zooplus (2 seconds to be respectful).
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000;
     }
 }

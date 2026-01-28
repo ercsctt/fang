@@ -3,8 +3,20 @@ set -e
 
 # Quality Gate Script
 # Runs formatters, linters, type-checkers, and tests for this project
+#
+# Usage:
+#   .fuel/quality-gate           # Run all checks including full test suite
+#   .fuel/quality-gate --fast    # Run only fast checks (for pre-commit)
+
+FAST_MODE=false
+if [ "$1" = "--fast" ]; then
+    FAST_MODE=true
+fi
 
 echo "🔧 Running quality checks..."
+if [ "$FAST_MODE" = true ]; then
+    echo "⚡ Fast mode enabled (pre-commit)"
+fi
 echo ""
 
 # 1. FORMATTERS (run first to auto-fix style issues)
@@ -54,13 +66,20 @@ fi
 
 echo ""
 
-# 4. TESTS (run fast tests only)
+# 4. TESTS
 echo "🧪 Running tests..."
 
 # Pest/PHPUnit tests
 if [ -f "vendor/bin/pest" ]; then
-    echo "  → Running Pest tests..."
-    php artisan test --compact
+    if [ "$FAST_MODE" = true ]; then
+        echo "  → Running fast tests only (pre-commit)..."
+        # Run only unit tests for speed in pre-commit hook
+        # Full test suite should run in CI
+        php artisan test --parallel --compact --testsuite=Unit
+    else
+        echo "  → Running full test suite..."
+        php artisan test --parallel --compact
+    fi
 elif [ -f "vendor/bin/phpunit" ]; then
     echo "  → Running PHPUnit tests..."
     vendor/bin/phpunit

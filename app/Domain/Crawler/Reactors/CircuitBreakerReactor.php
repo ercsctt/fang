@@ -7,6 +7,7 @@ namespace App\Domain\Crawler\Reactors;
 use App\Domain\Crawler\Events\CrawlCompleted;
 use App\Domain\Crawler\Events\CrawlFailed;
 use App\Domain\Crawler\Events\CrawlStarted;
+use App\Enums\RetailerStatus;
 use App\Models\Retailer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -114,8 +115,8 @@ class CircuitBreakerReactor extends Reactor
             ->where('slug', Str::slug($retailer))
             ->first();
 
-        if ($retailerModel && $retailerModel->is_active) {
-            $retailerModel->update(['is_active' => false]);
+        if ($retailerModel && $retailerModel->status->isAvailableForCrawling()) {
+            $retailerModel->update(['status' => RetailerStatus::Failed]);
 
             Log::error('CIRCUIT BREAKER ACTIVATED: Retailer disabled due to high failure rate', [
                 'retailer' => $retailer,
@@ -201,8 +202,8 @@ class CircuitBreakerReactor extends Reactor
             ->where('slug', Str::slug($retailer))
             ->first();
 
-        if ($retailerModel && ! $retailerModel->is_active) {
-            $retailerModel->update(['is_active' => true]);
+        if ($retailerModel && $retailerModel->status === RetailerStatus::Failed) {
+            $retailerModel->update(['status' => RetailerStatus::Active]);
 
             Log::info('Circuit breaker manually reset for retailer', [
                 'retailer' => $retailer,

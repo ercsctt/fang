@@ -16,9 +16,9 @@ class SainsburysCrawler extends BaseCrawler
         parent::__construct($httpAdapter);
 
         // Register extractors for Sainsbury's
-        $this->addExtractor(new SainsburysProductListingUrlExtractor);
-        $this->addExtractor(new SainsburysProductDetailsExtractor);
-        $this->addExtractor(new SainsburysProductReviewsExtractor);
+        $this->addExtractor(SainsburysProductListingUrlExtractor::class);
+        $this->addExtractor(SainsburysProductDetailsExtractor::class);
+        $this->addExtractor(SainsburysProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -37,30 +37,5 @@ class SainsburysCrawler extends BaseCrawler
             // Puppy specific
             'https://www.sainsburys.co.uk/gol-ui/groceries/pets/dog-food-and-treats/puppy-food',
         ];
-    }
-
-    /**
-     * Sainsbury's specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                // Sainsbury's may require cookies/postcode for availability
-                // Using a default UK postcode area for consistency
-                'Cookie' => 'JSESSIONID=; AWSALB=',
-            ],
-        ];
-    }
-
-    /**
-     * Be respectful with request delays.
-     * Sainsbury's is a major supermarket - standard anti-bot measures expected.
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000; // 2 seconds between requests
     }
 }

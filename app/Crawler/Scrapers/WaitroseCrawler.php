@@ -15,9 +15,9 @@ class WaitroseCrawler extends BaseCrawler
     {
         parent::__construct($httpAdapter);
 
-        $this->addExtractor(new WaitroseProductListingUrlExtractor);
-        $this->addExtractor(new WaitroseProductDetailsExtractor);
-        $this->addExtractor(new WaitroseProductReviewsExtractor);
+        $this->addExtractor(WaitroseProductListingUrlExtractor::class);
+        $this->addExtractor(WaitroseProductDetailsExtractor::class);
+        $this->addExtractor(WaitroseProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -35,26 +35,5 @@ class WaitroseCrawler extends BaseCrawler
             'https://www.waitrose.com/ecom/shop/browse/groceries/pet/dog/dog_food/puppy_food',
             'https://www.waitrose.com/ecom/shop/browse/groceries/pet/dog/dog_treats',
         ];
-    }
-
-    /**
-     * Waitrose specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            ],
-        ];
-    }
-
-    /**
-     * Request delay for Waitrose (2 seconds to be respectful).
-     */
-    public function getRequestDelay(): int
-    {
-        return 2000;
     }
 }

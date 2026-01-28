@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Crawler\Aggregates\CrawlAggregate;
 use App\Domain\Crawler\Events\CrawlCompleted;
 use App\Domain\Crawler\Reactors\UpdateRetailerHealthReactor;
-use App\Enums\RetailerHealthStatus;
+use App\Enums\RetailerStatus;
 use App\Models\Retailer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -195,7 +195,7 @@ describe('circuit breaker - database-backed health tracking', function () {
             'slug' => 'bm',
             'name' => 'B&M',
             'consecutive_failures' => 7,
-            'health_status' => RetailerHealthStatus::Degraded,
+            'status' => RetailerStatus::Degraded,
             'last_failure_at' => now()->subHour(),
         ]);
 
@@ -208,16 +208,18 @@ describe('circuit breaker - database-backed health tracking', function () {
         $retailer->refresh();
 
         expect($retailer->consecutive_failures)->toBe(0)
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Healthy)
+            ->and($retailer->status)->toBe(RetailerStatus::Active)
             ->and($retailer->paused_until)->toBeNull();
     });
 
     test('clears paused_until on successful crawl', function () {
         Log::spy();
 
-        $retailer = Retailer::factory()->paused()->create([
+        $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
+            'status' => RetailerStatus::Paused,
+            'paused_until' => now()->addHour(),
         ]);
 
         $crawlId = Str::uuid()->toString();
@@ -229,7 +231,7 @@ describe('circuit breaker - database-backed health tracking', function () {
         $retailer->refresh();
 
         expect($retailer->paused_until)->toBeNull()
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Healthy);
+            ->and($retailer->status)->toBe(RetailerStatus::Active);
     });
 
     test('increments consecutive failures on failed crawl', function () {
@@ -260,7 +262,7 @@ describe('circuit breaker - database-backed health tracking', function () {
             'slug' => 'bm',
             'name' => 'B&M',
             'consecutive_failures' => 4,
-            'health_status' => RetailerHealthStatus::Healthy,
+            'status' => RetailerStatus::Active,
         ]);
 
         $crawlId = Str::uuid()->toString();
@@ -272,7 +274,7 @@ describe('circuit breaker - database-backed health tracking', function () {
         $retailer->refresh();
 
         expect($retailer->consecutive_failures)->toBe(5)
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Degraded);
+            ->and($retailer->status)->toBe(RetailerStatus::Degraded);
     });
 
     test('sets unhealthy status and pauses retailer after 10 consecutive failures', function () {
@@ -282,7 +284,7 @@ describe('circuit breaker - database-backed health tracking', function () {
             'slug' => 'bm',
             'name' => 'B&M',
             'consecutive_failures' => 9,
-            'health_status' => RetailerHealthStatus::Degraded,
+            'status' => RetailerStatus::Degraded,
         ]);
 
         $crawlId = Str::uuid()->toString();
@@ -294,7 +296,7 @@ describe('circuit breaker - database-backed health tracking', function () {
         $retailer->refresh();
 
         expect($retailer->consecutive_failures)->toBe(10)
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Unhealthy)
+            ->and($retailer->status)->toBe(RetailerStatus::Failed)
             ->and($retailer->paused_until)->not->toBeNull()
             ->and($retailer->paused_until->isFuture())->toBeTrue();
     });
@@ -306,7 +308,7 @@ describe('circuit breaker - database-backed health tracking', function () {
             'slug' => 'bm',
             'name' => 'B&M',
             'consecutive_failures' => 9,
-            'health_status' => RetailerHealthStatus::Degraded,
+            'status' => RetailerStatus::Degraded,
         ]);
 
         $crawlId = Str::uuid()->toString();
@@ -332,7 +334,7 @@ describe('circuit breaker - database-backed health tracking', function () {
             'slug' => 'bm',
             'name' => 'B&M',
             'consecutive_failures' => 10,
-            'health_status' => RetailerHealthStatus::Unhealthy,
+            'status' => RetailerStatus::Failed,
             'paused_until' => $originalPausedUntil,
         ]);
 
@@ -346,14 +348,16 @@ describe('circuit breaker - database-backed health tracking', function () {
 
         // Should still be unhealthy with incremented failures but same pause time
         expect($retailer->consecutive_failures)->toBe(11)
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Unhealthy)
+            ->and($retailer->status)->toBe(RetailerStatus::Failed)
             ->and($retailer->paused_until->timestamp)->toBe($originalPausedUntil->timestamp);
     });
 
     test('manual reset clears all health tracking', function () {
-        $retailer = Retailer::factory()->paused()->create([
+        $retailer = Retailer::factory()->create([
             'slug' => 'bm',
             'name' => 'B&M',
+            'status' => RetailerStatus::Paused,
+            'paused_until' => now()->addHour(),
             'last_failure_at' => now()->subHour(),
         ]);
 
@@ -366,7 +370,7 @@ describe('circuit breaker - database-backed health tracking', function () {
         $retailer->refresh();
 
         expect($retailer->consecutive_failures)->toBe(0)
-            ->and($retailer->health_status)->toBe(RetailerHealthStatus::Healthy)
+            ->and($retailer->status)->toBe(RetailerStatus::Active)
             ->and($retailer->paused_until)->toBeNull()
             ->and($retailer->last_failure_at)->toBeNull()
             ->and(Cache::get('crawler:health:results:bm'))->toBeNull()
@@ -401,15 +405,16 @@ describe('Retailer model health methods', function () {
 
     test('isAvailableForCrawling returns true when active and not paused', function () {
         $retailer = Retailer::factory()->create([
-            'is_active' => true,
+            'status' => RetailerStatus::Active,
             'paused_until' => null,
         ]);
 
         expect($retailer->isAvailableForCrawling())->toBeTrue();
     });
 
-    test('isAvailableForCrawling returns false when inactive', function () {
-        $retailer = Retailer::factory()->inactive()->create([
+    test('isAvailableForCrawling returns false when disabled', function () {
+        $retailer = Retailer::factory()->create([
+            'status' => RetailerStatus::Disabled,
             'paused_until' => null,
         ]);
 
@@ -417,7 +422,10 @@ describe('Retailer model health methods', function () {
     });
 
     test('isAvailableForCrawling returns false when paused', function () {
-        $retailer = Retailer::factory()->paused()->create();
+        $retailer = Retailer::factory()->create([
+            'status' => RetailerStatus::Paused,
+            'paused_until' => now()->addHour(),
+        ]);
 
         expect($retailer->isAvailableForCrawling())->toBeFalse();
     });

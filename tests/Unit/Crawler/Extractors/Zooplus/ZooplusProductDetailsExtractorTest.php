@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Crawler\DTOs\ProductDetails;
 use App\Crawler\Extractors\Zooplus\ZooplusProductDetailsExtractor;
+use App\Crawler\Services\CategoryExtractor;
 
 beforeEach(function () {
-    $this->extractor = new ZooplusProductDetailsExtractor;
+    $this->extractor = new ZooplusProductDetailsExtractor(
+        app(CategoryExtractor::class)
+    );
 });
 
 describe('canHandle', function () {

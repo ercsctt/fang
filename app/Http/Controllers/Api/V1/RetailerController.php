@@ -18,11 +18,16 @@ class RetailerController extends Controller
             ->withCount('productListings');
 
         if ($request->filled('active')) {
-            $query->where('is_active', $request->boolean('active'));
+            $isActive = $request->boolean('active');
+            if ($isActive) {
+                $query->where('status', \App\Enums\RetailerStatus::Active);
+            } else {
+                $query->whereNot('status', \App\Enums\RetailerStatus::Active);
+            }
         }
 
-        if ($request->filled('health_status')) {
-            $query->where('health_status', $request->input('health_status'));
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
         }
 
         $sortField = $request->input('sort', 'name');

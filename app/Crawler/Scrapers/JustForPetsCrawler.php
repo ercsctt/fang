@@ -16,9 +16,9 @@ class JustForPetsCrawler extends BaseCrawler
         parent::__construct($httpAdapter);
 
         // Register extractors for Just for Pets
-        $this->addExtractor(new JFPProductListingUrlExtractor);
-        $this->addExtractor(new JFPProductDetailsExtractor);
-        $this->addExtractor(new JFPProductReviewsExtractor);
+        $this->addExtractor(JFPProductListingUrlExtractor::class);
+        $this->addExtractor(JFPProductDetailsExtractor::class);
+        $this->addExtractor(JFPProductReviewsExtractor::class);
     }
 
     public function getRetailerName(): string
@@ -37,27 +37,5 @@ class JustForPetsCrawler extends BaseCrawler
             // Puppy specific
             'https://www.justforpetsonline.co.uk/dog/puppy/',
         ];
-    }
-
-    /**
-     * Just for Pets specific request options.
-     */
-    protected function getRequestOptions(): array
-    {
-        return [
-            'headers' => [
-                'Accept-Language' => 'en-GB,en;q=0.9',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            ],
-        ];
-    }
-
-    /**
-     * Be respectful with request delays.
-     * Specialist pet retailer - standard e-commerce, lower anti-bot risk.
-     */
-    public function getRequestDelay(): int
-    {
-        return 1500; // 1.5 seconds between requests
     }
 }
