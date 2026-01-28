@@ -87,5 +87,20 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - AppSidebar.vue was already using Wayfinder routes - no changes needed
 - All Wayfinder actions exist for admin controllers (RetailerController, CrawlMonitoringController, ProductVerificationController)
 
+### Task f-662fc6: Add browser tests for admin navigation
+- Created `tests/Browser/Admin/NavigationTest.php` with Pest v4 browser tests
+- Tests cover:
+  1. `sidebar displays all admin links` - Verifies Dashboard, Retailers Management, Product Verification, Crawl Monitoring, and Scraper Tester are visible
+  2. `dashboard link works` - Clicks Dashboard nav item, verifies navigation to /dashboard
+  3. `retailers link works` - Clicks Retailers Management nav item, verifies navigation to /admin/retailers
+  4. `crawl monitoring link works` - Clicks Crawl Monitoring nav item, verifies navigation to /admin/crawl-monitoring
+  5. `product verification link works` - Clicks Product Verification nav item, verifies navigation to /admin/product-verification
+  6. `active link highlighting` - Verifies the `data-active="true"` attribute is correctly set on the current page's nav item
+- Pattern: Uses same login pattern as CrawlMonitoringTest.php:
+  - `visit('/login')` → `fill('#email', ...)` → `fill('#password', ...)` → `click('[data-test="login-button"]')` → `waitForText('Dashboard')`
+  - Uses `Hash::make('password')` for user creation
+- Active link detection: Uses `[data-sidebar="menu-button"][data-active="true"]:has-text("...")` selector
+- Note: These tests require the development server to be running with built assets
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->
