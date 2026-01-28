@@ -15,6 +15,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
 import {
@@ -109,7 +110,7 @@ const props = defineProps<Props>();
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Product Verification',
-        href: '/admin/product-verification',
+        href: admin.productVerification.index.url(),
     },
 ];
 
@@ -121,12 +122,14 @@ function changeStatus(value: unknown) {
     if (!value || typeof value !== 'string') return;
     selectedStatus.value = value;
     router.get(
-        '/admin/product-verification',
-        {
-            status: value,
-            sort: props.filters.sort,
-            direction: props.filters.direction,
-        },
+        admin.productVerification.index.url({
+            query: {
+                status: value,
+                sort: props.filters.sort,
+                direction: props.filters.direction,
+            },
+        }),
+        {},
         {
             preserveState: true,
             preserveScroll: true,
@@ -150,7 +153,7 @@ async function bulkApprove() {
 
     try {
         const response = await fetch(
-            '/admin/product-verification/bulk-approve',
+            admin.productVerification.bulkApprove.url(),
             {
                 method: 'POST',
                 headers: {

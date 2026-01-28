@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Form, Head, Link } from '@inertiajs/vue3';
 import { ArrowLeft } from 'lucide-vue-next';
@@ -45,8 +46,8 @@ interface Props {
 const props = defineProps<Props>();
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Retailers', href: '/admin/retailers' },
-    { title: 'Create Retailer', href: '/admin/retailers/create' },
+    { title: 'Retailers', href: admin.retailers.index.url() },
+    { title: 'Create Retailer', href: admin.retailers.create.url() },
 ];
 
 const name = ref('');
@@ -98,7 +99,7 @@ const selectedStatusLabel = computed(() => {
         <div class="flex flex-1 flex-col gap-6 p-4 lg:p-6">
             <div class="flex items-center gap-4">
                 <Link
-                    href="/admin/retailers"
+                    :href="admin.retailers.index.url()"
                     class="flex items-center gap-2 text-muted-foreground hover:text-foreground"
                 >
                     <ArrowLeft class="size-4" />
@@ -268,7 +269,7 @@ const selectedStatusLabel = computed(() => {
                                 }}
                             </Button>
                             <Link
-                                href="/admin/retailers"
+                                :href="admin.retailers.index.url()"
                                 class="text-sm text-muted-foreground hover:text-foreground"
                             >
                                 Cancel

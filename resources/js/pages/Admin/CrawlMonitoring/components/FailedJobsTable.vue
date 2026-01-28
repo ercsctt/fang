@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button';
+import admin from '@/routes/admin';
 import { router } from '@inertiajs/vue3';
 import { RefreshCw, Trash2 } from 'lucide-vue-next';
 import { ref } from 'vue';
@@ -28,7 +29,7 @@ async function retryJob(jobId: number) {
 
     try {
         const response = await fetch(
-            `/admin/crawl-monitoring/jobs/${jobId}/retry`,
+            admin.crawlMonitoring.jobs.retry.url(jobId),
             {
                 method: 'POST',
                 headers: {
@@ -57,16 +58,19 @@ async function deleteJob(jobId: number) {
     deletingJobIds.value.add(jobId);
 
     try {
-        const response = await fetch(`/admin/crawl-monitoring/jobs/${jobId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN':
-                    document
-                        .querySelector('meta[name="csrf-token"]')
-                        ?.getAttribute('content') || '',
+        const response = await fetch(
+            admin.crawlMonitoring.jobs.delete.url(jobId),
+            {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN':
+                        document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') || '',
+                },
             },
-        });
+        );
 
         if (response.ok) {
             router.reload({ only: ['failedJobs'] });
@@ -88,16 +92,19 @@ async function retryAllJobs() {
     retryingAll.value = true;
 
     try {
-        const response = await fetch('/admin/crawl-monitoring/jobs/retry-all', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN':
-                    document
-                        .querySelector('meta[name="csrf-token"]')
-                        ?.getAttribute('content') || '',
+        const response = await fetch(
+            admin.crawlMonitoring.jobs.retryAll.url(),
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN':
+                        document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') || '',
+                },
             },
-        });
+        );
 
         if (response.ok) {
             router.reload({ only: ['failedJobs'] });

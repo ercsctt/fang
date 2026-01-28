@@ -9,6 +9,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import admin from '@/routes/admin';
 import { router } from '@inertiajs/vue3';
 import {
     ArrowUpDown,
@@ -136,8 +137,10 @@ function toggleSort(field: string) {
         direction = 'desc';
     }
     router.get(
-        '/admin/product-verification',
-        { status: props.filters.status, sort: field, direction },
+        admin.productVerification.index.url({
+            query: { status: props.filters.status, sort: field, direction },
+        }),
+        {},
         { preserveState: true, preserveScroll: true },
     );
 }
@@ -151,7 +154,7 @@ function approveMatch(match: Match, event: Event) {
     event.preventDefault();
     event.stopPropagation();
     router.post(
-        `/admin/product-verification/${match.id}/approve`,
+        admin.productVerification.approve.url(match.id),
         {},
         {
             preserveScroll: true,
@@ -163,7 +166,7 @@ function rejectMatch(match: Match, event: Event) {
     event.preventDefault();
     event.stopPropagation();
     router.post(
-        `/admin/product-verification/${match.id}/reject`,
+        admin.productVerification.reject.url(match.id),
         {},
         {
             preserveScroll: true,
@@ -210,7 +213,7 @@ function rejectMatch(match: Match, event: Event) {
                     :key="match.id"
                     class="cursor-pointer hover:bg-muted/50"
                     @click="
-                        router.get(`/admin/product-verification/${match.id}`)
+                        router.get(admin.productVerification.show.url(match.id))
                     "
                 >
                     <TableCell>
@@ -319,7 +322,9 @@ function rejectMatch(match: Match, event: Event) {
                                 title="View details"
                                 @click.stop="
                                     router.get(
-                                        `/admin/product-verification/${match.id}`,
+                                        admin.productVerification.show.url(
+                                            match.id,
+                                        ),
                                     )
                                 "
                             >

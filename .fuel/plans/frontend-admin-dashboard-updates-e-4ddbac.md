@@ -68,5 +68,24 @@ Update the admin dashboard frontend to properly reflect backend changes, add mis
 - Updated `tests/Pest.php` to include Browser directory in test configuration
 - Status actions (pause/resume/disable/enable) are API routes requiring Sanctum auth, triggered via RetailerTable.vue's fetch calls
 
+### Task f-1c12cd: Convert admin routes to Wayfinder
+- Converted all hardcoded route strings in admin pages to use Wayfinder-generated routes
+- Files updated:
+  - `resources/js/pages/Admin/CrawlMonitoring/Index.vue` - breadcrumbs and router.get calls
+  - `resources/js/pages/Admin/CrawlMonitoring/components/FailedJobsTable.vue` - fetch() calls for retry, delete, retryAll
+  - `resources/js/pages/Admin/ProductVerification/Index.vue` - breadcrumbs, router.get, fetch() for bulkApprove
+  - `resources/js/pages/Admin/ProductVerification/Show.vue` - breadcrumbs, router.post for approve/reject/rematch, router.get for back navigation
+  - `resources/js/pages/Admin/ProductVerification/components/VerificationTable.vue` - router.get for filtering, router.post for approve/reject, router.get for navigation
+  - `resources/js/pages/Admin/Retailers/Index.vue` - breadcrumbs and router.get for filtering
+  - `resources/js/pages/Admin/Retailers/Create.vue` - breadcrumbs and Link hrefs
+  - `resources/js/pages/Admin/Retailers/Edit.vue` - breadcrumbs, Link href, fetch() for testConnection
+- Pattern: Import `admin from '@/routes/admin'` and use:
+  - `admin.retailers.index.url()` for URL strings
+  - `admin.retailers.index.url({ query: { ... } })` for URLs with query params
+  - `admin.productVerification.approve.url(matchId)` for parameterized routes
+  - `admin.crawlMonitoring.jobs.retry.url(jobId)` for nested routes
+- AppSidebar.vue was already using Wayfinder routes - no changes needed
+- All Wayfinder actions exist for admin controllers (RetailerController, CrawlMonitoringController, ProductVerificationController)
+
 ## Interfaces Created
 <!-- Tasks: document interfaces/contracts created -->

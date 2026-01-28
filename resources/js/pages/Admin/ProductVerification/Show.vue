@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
 import {
@@ -113,11 +114,11 @@ const props = defineProps<Props>();
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Product Verification',
-        href: '/admin/product-verification',
+        href: admin.productVerification.index.url(),
     },
     {
         title: `Match #${props.match.id}`,
-        href: `/admin/product-verification/${props.match.id}`,
+        href: admin.productVerification.show.url(props.match.id),
     },
 ];
 
@@ -129,7 +130,7 @@ const selectedProductId = ref<number | null>(null);
 function approve() {
     isProcessing.value = true;
     router.post(
-        `/admin/product-verification/${props.match.id}/approve`,
+        admin.productVerification.approve.url(props.match.id),
         {},
         {
             onFinish: () => {
@@ -142,7 +143,7 @@ function approve() {
 function reject() {
     isProcessing.value = true;
     router.post(
-        `/admin/product-verification/${props.match.id}/reject`,
+        admin.productVerification.reject.url(props.match.id),
         { reason: rejectionReason.value },
         {
             onFinish: () => {
@@ -157,7 +158,7 @@ function rematch() {
 
     isProcessing.value = true;
     router.post(
-        `/admin/product-verification/${props.match.id}/rematch`,
+        admin.productVerification.rematch.url(props.match.id),
         { product_id: selectedProductId.value },
         {
             onFinish: () => {
@@ -212,7 +213,9 @@ const isPending = computed(() => props.match.status === 'pending');
                     <Button
                         variant="ghost"
                         size="icon"
-                        @click="router.get('/admin/product-verification')"
+                        @click="
+                            router.get(admin.productVerification.index.url())
+                        "
                     >
                         <ArrowLeft class="size-4" />
                     </Button>

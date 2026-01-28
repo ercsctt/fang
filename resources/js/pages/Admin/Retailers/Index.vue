@@ -17,6 +17,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
 import {
@@ -99,7 +100,7 @@ const props = defineProps<Props>();
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Retailers',
-        href: '/admin/retailers',
+        href: admin.retailers.index.url(),
     },
 ];
 
@@ -152,10 +153,14 @@ function applyFilters(overrides: Partial<Filters> = {}) {
         delete params.search;
     }
 
-    router.get('/admin/retailers', params, {
-        preserveState: true,
-        preserveScroll: true,
-    });
+    router.get(
+        admin.retailers.index.url({ query: params }),
+        {},
+        {
+            preserveState: true,
+            preserveScroll: true,
+        },
+    );
 }
 
 function refresh() {

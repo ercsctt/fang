@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Form, Head, Link, usePage } from '@inertiajs/vue3';
 import {
@@ -114,10 +115,10 @@ const props = defineProps<Props>();
 const page = usePage();
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Retailers', href: '/admin/retailers' },
+    { title: 'Retailers', href: admin.retailers.index.url() },
     {
         title: props.retailer.name,
-        href: `/admin/retailers/${props.retailer.id}/edit`,
+        href: admin.retailers.edit.url(props.retailer.id),
     },
 ];
 
@@ -183,7 +184,7 @@ const testConnection = async () => {
 
     try {
         const response = await fetch(
-            `/admin/retailers/${props.retailer.id}/test-connection`,
+            admin.retailers.testConnection.url(props.retailer.id),
             {
                 method: 'POST',
                 headers: {
@@ -219,7 +220,7 @@ const flash = computed(
         <div class="flex flex-1 flex-col gap-6 p-4 lg:p-6">
             <div class="flex items-center gap-4">
                 <Link
-                    href="/admin/retailers"
+                    :href="admin.retailers.index.url()"
                     class="flex items-center gap-2 text-muted-foreground hover:text-foreground"
                 >
                     <ArrowLeft class="size-4" />

@@ -16,6 +16,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/AppLayout.vue';
+import admin from '@/routes/admin';
 import type { BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/vue3';
 import {
@@ -129,7 +130,7 @@ const props = defineProps<Props>();
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Crawl Monitoring',
-        href: '/admin/crawl-monitoring',
+        href: admin.crawlMonitoring.url(),
     },
 ];
 
@@ -140,8 +141,8 @@ function changeRange(value: unknown) {
     if (!value || typeof value !== 'string') return;
     selectedRange.value = value;
     router.get(
-        '/admin/crawl-monitoring',
-        { range: value },
+        admin.crawlMonitoring.url({ query: { range: value } }),
+        {},
         {
             preserveState: true,
             preserveScroll: true,
